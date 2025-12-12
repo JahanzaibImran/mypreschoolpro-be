@@ -37,6 +37,7 @@ import { WaitlistModule } from './modules/waitlist/waitlist.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ParentDashboardModule } from './modules/parent-dashboard/parent-dashboard.module';
 import { ParentRegistrationModule } from './modules/parent-registration/parent-registration.module';
+import { SettingsModule } from './modules/settings/settings.module';
 import { APP_GUARD } from '@nestjs/core';
 import { RolesGuard } from './common/guards/roles.guard';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -78,7 +79,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
       ttl: 60000, // 60 seconds
       limit: 10, // 10 requests per minute
     },
-  ]), AuthModule, LeadsModule, PaymentsModule, EnrollmentModule, EmailModule, AiModule, CampaignsModule, AnalyticsModule, UsersModule, SchoolsModule, ClassesModule, MediaModule, NotificationsModule, MailerModule, InvoicesModule, StudentsModule, FormsModule, TeachersModule, CommunicationsModule, TasksModule, ReportsModule, BlogsModule, WaitlistModule, DashboardModule, ParentDashboardModule, ParentRegistrationModule],
+  ]), AuthModule, LeadsModule, PaymentsModule, EnrollmentModule, EmailModule, AiModule, CampaignsModule, AnalyticsModule, UsersModule, SchoolsModule, ClassesModule, MediaModule, NotificationsModule, MailerModule, InvoicesModule, StudentsModule, FormsModule, TeachersModule, CommunicationsModule, TasksModule, ReportsModule, BlogsModule, WaitlistModule, DashboardModule, ParentDashboardModule, ParentRegistrationModule, SettingsModule],
   controllers: [AppController],
   providers: [AppService, {
     provide: APP_GUARD,

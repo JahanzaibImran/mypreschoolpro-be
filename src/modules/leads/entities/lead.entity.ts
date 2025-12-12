@@ -24,6 +24,7 @@ export enum LeadStatus {
 }
 
 export enum LeadSource {
+  MANUAL_ENTRY = 'manual_entry',
   WEBSITE = 'website',
   REFERRAL = 'referral',
   WALK_IN = 'walk_in',

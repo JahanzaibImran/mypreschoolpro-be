@@ -18,6 +18,10 @@ import { SchoolEntity } from '../schools/entities/school.entity';
 import { Waitlist } from '../enrollment/entities/waitlist.entity';
 import { EnrollmentEntity } from '../enrollment/entities/enrollment.entity';
 import { ClassEntity } from '../classes/entities/class.entity';
+import { StudentDocument } from '../students/entities/student-document.entity';
+import { ProfileEntity } from '../users/entities/profile.entity';
+import { UserRoleEntity } from '../users/entities/user-role.entity';
+import { Student } from '../students/entities/student.entity';
 import { RealtimeModule } from '../realtime/realtime.module';
 
 @Module({
@@ -39,6 +43,10 @@ import { RealtimeModule } from '../realtime/realtime.module';
       Waitlist,
       EnrollmentEntity,
       ClassEntity,
+      StudentDocument,
+      ProfileEntity,
+      UserRoleEntity,
+      Student,
     ]),
     RealtimeModule,
   ],

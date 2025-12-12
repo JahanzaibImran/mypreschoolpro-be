@@ -178,6 +178,16 @@ export class CreateLeadDto {
   followUpDate?: string;
 
   @ApiPropertyOptional({
+    description: 'Tour date',
+    example: '2024-01-25T10:00:00.000Z',
+    type: String,
+    format: 'date-time',
+  })
+  @IsDateString()
+  @IsOptional()
+  tourDate?: string;
+
+  @ApiPropertyOptional({
     description: 'User ID of staff member assigned to this lead',
     example: '123e4567-e89b-12d3-a456-426614174001',
   })

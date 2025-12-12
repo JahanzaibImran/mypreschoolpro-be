@@ -461,9 +461,17 @@ export class AnalyticsService {
         parentName: e.lead?.parentName || 'Unknown',
         parentEmail: e.lead?.parentEmail || '',
         parentPhone: e.lead?.parentPhone || '',
-        childBirthdate: e.lead?.childBirthdate?.toISOString() || null,
+        childBirthdate: e.lead?.childBirthdate 
+          ? (typeof e.lead.childBirthdate === 'string' 
+              ? e.lead.childBirthdate 
+              : e.lead.childBirthdate.toISOString())
+          : null,
         program: e.program,
-        startDate: e.startDate?.toISOString() || null,
+        startDate: e.startDate 
+          ? (typeof e.startDate === 'string' 
+              ? e.startDate 
+              : e.startDate.toISOString())
+          : null,
         enrollmentAge: e.startDate
           ? Math.floor((Date.now() - new Date(e.startDate).getTime()) / (1000 * 60 * 60 * 24))
           : 0,

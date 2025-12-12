@@ -48,13 +48,27 @@ import { CreateParentLeadDto } from './dto/create-parent-lead.dto';
 import { AssignLeadDto } from './dto/assign-lead.dto';
 import { ReminderStatusType } from '../../common/enums/reminder-status-type.enum';
 import { CreateLeadActivityDto } from './dto/create-lead-activity.dto';
+import { CreateLeadInteractionDto, InteractionType } from './dto/create-lead-interaction.dto';
+import { LeadInteractionResponseDto } from './dto/lead-interaction-response.dto';
+import { UpdateLeadDetailsDto } from './dto/update-lead-details.dto';
+import { LeadDocumentResponseDto } from './dto/lead-document-response.dto';
+import { AssignableStaffResponseDto } from './dto/assignable-staff-response.dto';
+import { ConvertLeadDto } from './dto/convert-lead.dto';
+import { LeadInteraction } from './entities/lead-interaction.entity';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, In } from 'typeorm';
+import { ProfileEntity } from '../users/entities/profile.entity';
 
 @ApiTags('Leads')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('leads')
 export class LeadsController {
-  constructor(private readonly leadsService: LeadsService) {}
+  constructor(
+    private readonly leadsService: LeadsService,
+    @InjectRepository(ProfileEntity)
+    private readonly profileRepository: Repository<ProfileEntity>,
+  ) {}
 
   @Public()
   @Post('public')
@@ -1202,6 +1216,313 @@ export class LeadsController {
       parentName: activity.lead?.parentName || null,
       parentEmail: activity.lead?.parentEmail || null,
     };
+  }
+
+  @Get(':id/interactions')
+  @Roles(AppRole.SUPER_ADMIN, AppRole.SCHOOL_ADMIN, AppRole.ADMISSIONS_STAFF, AppRole.SCHOOL_OWNER, AppRole.TEACHER)
+  @ApiOperation({
+    summary: 'Get interactions for a lead',
+    description: 'Retrieve all interactions (calls, emails, meetings, notes) for a specific lead.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Lead ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Interactions retrieved successfully',
+    type: [LeadInteractionResponseDto],
+  })
+  @ApiUnauthorizedResponse({ description: 'Unauthorized' })
+  @ApiForbiddenResponse({ description: 'Forbidden - Insufficient permissions' })
+  async getLeadInteractions(
+    @Param('id') leadId: string,
+    @CurrentUser() user: AuthUser,
+  ): Promise<LeadInteractionResponseDto[]> {
+    const lead = await this.leadsService.findOne(leadId);
+
+    // Non-super admins can only see their own school's leads
+    if (user.primaryRole !== AppRole.SUPER_ADMIN && lead.schoolId !== user.schoolId) {
+      throw new ForbiddenException('You can only view interactions for leads in your own school');
+    }
+
+    const interactions = await this.leadsService.getLeadInteractions(leadId);
+
+    // Fetch user names for interactions
+    const userIds = [...new Set(interactions.map((i) => i.userId))];
+    const profiles = await this.profileRepository.find({
+      where: { id: In(userIds) },
+    });
+    const profileMap = new Map(profiles.map((p) => [p.id, p]));
+
+    return interactions.map((interaction) => {
+      const profile = profileMap.get(interaction.userId);
+      const userName = profile
+        ? `${profile.firstName || ''} ${profile.lastName || ''}`.trim() || profile.email
+        : null;
+
+      return {
+        id: interaction.id,
+        lead_id: interaction.leadId,
+        user_id: interaction.userId,
+        interaction_type: interaction.interactionType,
+        subject: interaction.subject,
+        content: interaction.content,
+        interaction_date: interaction.interactionDate.toISOString(),
+        user_name: userName,
+        created_at: interaction.createdAt.toISOString(),
+        updated_at: interaction.createdAt.toISOString(), // Use createdAt since updatedAt doesn't exist
+      };
+    });
+  }
+
+  @Post(':id/interactions')
+  @Roles(AppRole.SUPER_ADMIN, AppRole.SCHOOL_ADMIN, AppRole.ADMISSIONS_STAFF, AppRole.SCHOOL_OWNER)
+  @ApiOperation({
+    summary: 'Create a new interaction for a lead',
+    description: 'Add a new interaction (call, email, meeting, note) to a lead.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Lead ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiBody({ type: CreateLeadInteractionDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Interaction created successfully',
+    type: LeadInteractionResponseDto,
+  })
+  @ApiUnauthorizedResponse({ description: 'Unauthorized' })
+  @ApiForbiddenResponse({ description: 'Forbidden - Insufficient permissions' })
+  async createLeadInteraction(
+    @Param('id') leadId: string,
+    @Body() dto: CreateLeadInteractionDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<LeadInteractionResponseDto> {
+    const lead = await this.leadsService.findOne(leadId);
+
+    // Non-super admins can only add interactions for their own school's leads
+    if (user.primaryRole !== AppRole.SUPER_ADMIN && lead.schoolId !== user.schoolId) {
+      throw new ForbiddenException('You can only add interactions for leads in your own school');
+    }
+
+    const interaction = await this.leadsService.createLeadInteraction(leadId, dto, user.id);
+
+    // Get user name
+    const profile = await this.profileRepository.findOne({
+      where: { id: user.id },
+    });
+    const userName = profile
+      ? `${profile.firstName || ''} ${profile.lastName || ''}`.trim() || profile.email
+      : null;
+
+    return {
+      id: interaction.id,
+      lead_id: interaction.leadId,
+      user_id: interaction.userId,
+      interaction_type: interaction.interactionType,
+      subject: interaction.subject,
+      content: interaction.content,
+      interaction_date: interaction.interactionDate.toISOString(),
+      user_name: userName,
+      created_at: interaction.createdAt.toISOString(),
+      updated_at: interaction.createdAt.toISOString(), // Use createdAt since updatedAt doesn't exist
+    };
+  }
+
+  @Get(':id/documents')
+  @Roles(AppRole.SUPER_ADMIN, AppRole.SCHOOL_ADMIN, AppRole.ADMISSIONS_STAFF, AppRole.SCHOOL_OWNER, AppRole.TEACHER)
+  @ApiOperation({
+    summary: 'Get documents for a lead',
+    description: 'Retrieve all documents uploaded for a lead (by student_id which is the lead_id).',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Lead ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Documents retrieved successfully',
+    type: [LeadDocumentResponseDto],
+  })
+  @ApiUnauthorizedResponse({ description: 'Unauthorized' })
+  async getLeadDocuments(
+    @Param('id') leadId: string,
+    @CurrentUser() user: AuthUser,
+  ): Promise<LeadDocumentResponseDto[]> {
+    const lead = await this.leadsService.findOne(leadId);
+
+    // Non-super admins can only see their own school's leads
+    if (user.primaryRole !== AppRole.SUPER_ADMIN && lead.schoolId !== user.schoolId) {
+      throw new ForbiddenException('You can only view documents for leads in your own school');
+    }
+
+    const documents = await this.leadsService.getLeadDocuments(leadId);
+
+    return documents.map((doc) => ({
+      id: doc.id,
+      student_id: doc.studentId,
+      school_id: doc.schoolId,
+      document_type: doc.documentType,
+      file_name: doc.fileName,
+      file_path: doc.filePath,
+      file_url: doc.fileUrl,
+      created_at: doc.createdAt.toISOString(),
+      parent_submitted_at: doc.parentSubmittedAt?.toISOString() || null,
+    }));
+  }
+
+  @Get(':id/documents/missing')
+  @Roles(AppRole.SUPER_ADMIN, AppRole.SCHOOL_ADMIN, AppRole.ADMISSIONS_STAFF, AppRole.SCHOOL_OWNER, AppRole.TEACHER)
+  @ApiOperation({
+    summary: 'Get missing required documents for a lead',
+    description: 'Get a list of required documents that have not been uploaded yet.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Lead ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Missing documents retrieved successfully',
+    schema: {
+      type: 'array',
+      items: { type: 'string' },
+      example: ['Birth Certificate', 'Immunization Records'],
+    },
+  })
+  @ApiUnauthorizedResponse({ description: 'Unauthorized' })
+  async getMissingDocuments(
+    @Param('id') leadId: string,
+    @CurrentUser() user: AuthUser,
+  ): Promise<string[]> {
+    const lead = await this.leadsService.findOne(leadId);
+
+    // Non-super admins can only see their own school's leads
+    if (user.primaryRole !== AppRole.SUPER_ADMIN && lead.schoolId !== user.schoolId) {
+      throw new ForbiddenException('You can only view missing documents for leads in your own school');
+    }
+
+    return this.leadsService.getMissingDocuments(leadId);
+  }
+
+  @Get(':id/assignable-staff')
+  @Roles(AppRole.SUPER_ADMIN, AppRole.SCHOOL_ADMIN, AppRole.SCHOOL_OWNER)
+  @ApiOperation({
+    summary: 'Get assignable staff for a lead',
+    description: 'Get list of staff members (school_admin, admissions_staff) who can be assigned to this lead.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Lead ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Assignable staff retrieved successfully',
+    type: [AssignableStaffResponseDto],
+  })
+  @ApiUnauthorizedResponse({ description: 'Unauthorized' })
+  async getAssignableStaff(
+    @Param('id') leadId: string,
+    @CurrentUser() user: AuthUser,
+  ): Promise<AssignableStaffResponseDto[]> {
+    const lead = await this.leadsService.findOne(leadId);
+
+    // Non-super admins can only see their own school's leads
+    if (user.primaryRole !== AppRole.SUPER_ADMIN && lead.schoolId !== user.schoolId) {
+      throw new ForbiddenException('You can only view assignable staff for leads in your own school');
+    }
+
+    return this.leadsService.getAssignableStaff(lead.schoolId);
+  }
+
+  @Patch(':id/details')
+  @Roles(AppRole.SUPER_ADMIN, AppRole.SCHOOL_ADMIN, AppRole.SCHOOL_OWNER)
+  @ApiOperation({
+    summary: 'Update lead details',
+    description: 'Update lead status, urgency, rating, assignment, or follow-up date.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Lead ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiBody({ type: UpdateLeadDetailsDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Lead details updated successfully',
+    type: LeadResponseDto,
+  })
+  @ApiUnauthorizedResponse({ description: 'Unauthorized' })
+  @ApiForbiddenResponse({ description: 'Forbidden - Insufficient permissions' })
+  async updateLeadDetails(
+    @Param('id') leadId: string,
+    @Body() dto: UpdateLeadDetailsDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<LeadResponseDto> {
+    const lead = await this.leadsService.findOne(leadId);
+
+    // Non-super admins can only update their own school's leads
+    if (user.primaryRole !== AppRole.SUPER_ADMIN && lead.schoolId !== user.schoolId) {
+      throw new ForbiddenException('You can only update leads for your own school');
+    }
+
+    // Validate assigned_to belongs to the same school
+    if (dto.assigned_to) {
+      const assignableStaff = await this.leadsService.getAssignableStaff(lead.schoolId);
+      const isValidAssignment = assignableStaff.some((staff) => staff.user_id === dto.assigned_to);
+      if (!isValidAssignment) {
+        throw new BadRequestException('Assigned user must be a staff member of the same school');
+      }
+    }
+
+    const updatedLead = await this.leadsService.updateLeadDetails(leadId, dto, user.id);
+    return this.mapToResponseDto(updatedLead);
+  }
+
+  @Post(':id/convert')
+  @Roles(AppRole.SUPER_ADMIN, AppRole.SCHOOL_ADMIN, AppRole.SCHOOL_OWNER)
+  @ApiOperation({
+    summary: 'Convert lead to student',
+    description: 'Convert a lead to an enrolled student. Creates a student record and enrollment.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Lead ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiBody({ type: ConvertLeadDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Lead converted successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        studentId: { type: 'string' },
+        enrollmentId: { type: 'string' },
+      },
+    },
+  })
+  @ApiUnauthorizedResponse({ description: 'Unauthorized' })
+  @ApiForbiddenResponse({ description: 'Forbidden - Insufficient permissions' })
+  async convertLead(
+    @Param('id') leadId: string,
+    @Body() dto: ConvertLeadDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<{ studentId: string; enrollmentId: string }> {
+    const lead = await this.leadsService.findOne(leadId);
+
+    // Non-super admins can only convert their own school's leads
+    if (user.primaryRole !== AppRole.SUPER_ADMIN && lead.schoolId !== user.schoolId) {
+      throw new ForbiddenException('You can only convert leads for your own school');
+    }
+
+    return this.leadsService.convertLeadToStudent(leadId, dto, user.id);
   }
 }
 

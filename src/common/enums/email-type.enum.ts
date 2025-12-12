@@ -1,5 +1,6 @@
 /**
  * Email type enum for categorizing emails
+ * This enum must match the database email_type enum in Supabase
  */
 export enum EmailType {
   WELCOME = 'welcome',
@@ -10,6 +11,9 @@ export enum EmailType {
   ACTIVITY_NOTIFICATION = 'activity_notification',
   LEAD_NOTIFICATION = 'lead_notification',
   SYSTEM_ALERT = 'system_alert',
+  DOCUMENT_REMINDER = 'document_reminder',
+  INVOICE_REMINDER = 'invoice_reminder',
+  STAFF_INVITATION = 'staff_invitation',
 }
 
 

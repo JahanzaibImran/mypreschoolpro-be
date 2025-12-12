@@ -528,9 +528,18 @@ export class UsersService {
 
   /**
    * Get all users with their roles and schools (for admin user management)
+   * Supports pagination, search, filtering, and sorting
    */
-  async findAllUsersWithRolesAndSchools(): Promise<
-    Array<{
+  async findAllUsersWithRolesAndSchools(query?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    role?: string;
+    status?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }): Promise<{
+    data: Array<{
       id: string;
       firstName: string | null;
       lastName: string | null;
@@ -540,16 +549,75 @@ export class UsersService {
       role: AppRole | null;
       schoolId: string | null;
       schoolName: string | null;
-    }>
-  > {
-    // Fetch all profiles
-    const profiles = await this.profileRepository.find({
-      order: { createdAt: 'DESC' },
-      select: ['id', 'firstName', 'lastName', 'email', 'status', 'createdAt'],
-    });
+    }>;
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+    };
+  }> {
+    const page = query?.page || 1;
+    const limit = query?.limit || 50;
+    const skip = (page - 1) * limit;
+    const sortBy = query?.sortBy || 'createdAt';
+    const sortOrder = query?.sortOrder?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+    // Build query with search and filters
+    const queryBuilder = this.profileRepository.createQueryBuilder('profile')
+      .select([
+        'profile.id',
+        'profile.firstName',
+        'profile.lastName',
+        'profile.email',
+        'profile.status',
+        'profile.createdAt',
+      ]);
+
+    // Apply search filter
+    if (query?.search) {
+      const searchTerm = `%${query.search}%`;
+      queryBuilder.andWhere(
+        '(profile.firstName ILIKE :search OR profile.lastName ILIKE :search OR profile.email ILIKE :search)',
+        { search: searchTerm }
+      );
+    }
+
+    // Apply status filter
+    if (query?.status) {
+      queryBuilder.andWhere('profile.status = :status', { status: query.status });
+    }
+
+    // Apply sorting
+    const sortFieldMap: Record<string, string> = {
+      createdAt: 'profile.createdAt',
+      email: 'profile.email',
+      firstName: 'profile.firstName',
+      lastName: 'profile.lastName',
+      status: 'profile.status',
+    };
+    const sortField = sortFieldMap[sortBy] || 'profile.createdAt';
+    queryBuilder.orderBy(sortField, sortOrder);
+
+    // Get total count before pagination
+    const total = await queryBuilder.getCount();
+
+    // Apply pagination
+    queryBuilder.skip(skip).take(limit);
+
+    // Execute query
+    const profiles = await queryBuilder.getMany();
 
     if (profiles.length === 0) {
-      return [];
+      return {
+        data: [],
+        pagination: {
+          page,
+          limit,
+          total: 0,
+          totalPages: 0,
+        },
+      };
     }
 
     const userIds = profiles.map((p) => p.id);
@@ -586,8 +654,8 @@ export class UsersService {
       schoolsMap.set(school.id, school.name);
     });
 
-    // Combine data
-    return profiles.map((profile) => {
+    // Apply role filter after fetching (since roles are in a separate table)
+    let combinedData = profiles.map((profile) => {
       const role = rolesMap.get(profile.id);
       const schoolName = role?.schoolId ? schoolsMap.get(role.schoolId) || null : null;
 
@@ -603,6 +671,57 @@ export class UsersService {
         schoolName,
       };
     });
+
+    // Apply role filter if specified
+    if (query?.role) {
+      combinedData = combinedData.filter((user) => user.role === query.role);
+    }
+
+    // Recalculate total if role filter was applied
+    let filteredTotal = total;
+    if (query?.role) {
+      // Need to count all matching profiles with the role filter
+      const allProfiles = await this.profileRepository.find({
+        select: ['id'],
+      });
+      const allUserIds = allProfiles.map((p) => p.id);
+      const allRoles = await this.userRoleRepository.find({
+        where: { userId: In(allUserIds), role: query.role as AppRole },
+        select: ['userId'],
+      });
+      const roleFilteredUserIds = new Set(allRoles.map((r) => r.userId));
+      
+      // Apply search and status filters to get accurate count
+      const countQueryBuilder = this.profileRepository.createQueryBuilder('profile')
+        .select('profile.id');
+      
+      if (query?.search) {
+        const searchTerm = `%${query.search}%`;
+        countQueryBuilder.andWhere(
+          '(profile.firstName ILIKE :search OR profile.lastName ILIKE :search OR profile.email ILIKE :search)',
+          { search: searchTerm }
+        );
+      }
+      
+      if (query?.status) {
+        countQueryBuilder.andWhere('profile.status = :status', { status: query.status });
+      }
+      
+      const allMatchingProfiles = await countQueryBuilder.getMany();
+      filteredTotal = allMatchingProfiles.filter((p) => roleFilteredUserIds.has(p.id)).length;
+    }
+
+    const totalPages = Math.ceil(filteredTotal / limit);
+
+    return {
+      data: combinedData,
+      pagination: {
+        page,
+        limit,
+        total: filteredTotal,
+        totalPages,
+      },
+    };
   }
 
   /**

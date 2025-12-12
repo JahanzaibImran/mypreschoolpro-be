@@ -45,8 +45,10 @@ import { StaffInvitationResponseDto } from './dto/staff-invitation-response.dto'
 import { UpdateStaffRoleDto } from './dto/update-staff-role.dto';
 import { UpdateStaffStatusDto } from './dto/update-staff-status.dto';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UsersQueryDto } from './dto/users-query.dto';
 import { MailerService } from '../mailer/mailer.service';
 import { ConfigService } from '@nestjs/config';
+import { Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -58,6 +60,8 @@ import { ImpersonationSession } from './entities/impersonation-session.entity';
 @UseGuards(JwtAuthGuard)
 @Controller('users')
 export class UsersController {
+  private readonly logger = new Logger(UsersController.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly s3Service: S3Service,
@@ -88,8 +92,21 @@ export class UsersController {
       }
     });
 
-    // For SCHOOL_OWNER, also get schools they own
-    if (user.primaryRole === AppRole.SCHOOL_OWNER) {
+    // For SCHOOL_OWNER, check if they own the specific school or any schools
+    const hasSchoolOwnerRole = user.roles?.some(role => role.role === AppRole.SCHOOL_OWNER);
+    if (hasSchoolOwnerRole) {
+      // First, directly check if the requested school is owned by this user
+      const requestedSchool = await this.schoolRepository.findOne({
+        where: { id: schoolId, ownerId: user.id },
+        select: ['id'],
+      });
+      
+      if (requestedSchool) {
+        // User owns the requested school, allow access
+        return;
+      }
+      
+      // Also get all schools they own for other checks
       const ownedSchools = await this.schoolRepository.find({
         where: { ownerId: user.id },
         select: ['id'],
@@ -734,15 +751,37 @@ export class UsersController {
       this.configService.get<string>('APP_URL', 'http://localhost:5173');
     const invitationLink = `${appUrl.replace(/\/$/, '')}/invite/accept?token=${token}`;
 
-    await this.mailerService.sendStaffInvitation({
+    // Get inviter's name for the email
+    const inviterProfile = await this.usersService.findProfileById(user.id);
+    const inviterName = inviterProfile 
+      ? `${inviterProfile.firstName || ''} ${inviterProfile.lastName || ''}`.trim() || 'School Administrator'
+      : 'School Administrator';
+
+    // Send invitation email and check result
+    const emailResult = await this.mailerService.sendStaffInvitation({
       schoolId: dto.schoolId,
       email: normalizedEmail,
       role: dto.role,
       schoolName: dto.schoolName || 'Your School',
-      invitedBy: user.id,
+      invitedBy: inviterName,
       invitationToken: token,
       invitationLink,
     });
+
+    // Log email result - check if email was sent successfully
+    if (!emailResult.success) {
+      this.logger.warn(`⚠️ Staff invitation email failed to send to ${normalizedEmail}. Invitation created but email delivery failed. Check email logs for details.`);
+      // Don't throw error - invitation is created, just email failed
+      // The invitation can still be accepted via the link if shared manually
+    } else {
+      const skipped = (emailResult as any).skipped;
+      if (skipped) {
+        const reason = (emailResult as any).reason || 'User preference disabled';
+        this.logger.log(`📧 Staff invitation email skipped for ${normalizedEmail}: ${reason}`);
+      } else {
+        this.logger.log(`✅ Staff invitation email sent successfully to ${normalizedEmail}${emailResult.emailId ? ` (email ID: ${emailResult.emailId})` : ''}`);
+      }
+    }
 
     return {
       status: 'invitation_sent',
@@ -875,31 +914,45 @@ export class UsersController {
   @Roles(AppRole.SUPER_ADMIN)
   @ApiOperation({
     summary: 'Get all users with roles and schools',
-    description: 'Retrieve all users with their roles and school associations (super admin only).',
+    description: 'Retrieve all users with their roles and school associations (super admin only). Supports pagination, search, filtering, and sorting.',
   })
   @ApiResponse({
     status: 200,
     description: 'Users retrieved successfully',
     schema: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          firstName: { type: 'string', nullable: true },
-          lastName: { type: 'string', nullable: true },
-          email: { type: 'string' },
-          status: { type: 'string' },
-          createdAt: { type: 'string' },
-          role: { type: 'string', nullable: true },
-          schoolId: { type: 'string', nullable: true },
-          schoolName: { type: 'string', nullable: true },
+      type: 'object',
+      properties: {
+        data: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              firstName: { type: 'string', nullable: true },
+              lastName: { type: 'string', nullable: true },
+              email: { type: 'string' },
+              status: { type: 'string' },
+              createdAt: { type: 'string' },
+              role: { type: 'string', nullable: true },
+              schoolId: { type: 'string', nullable: true },
+              schoolName: { type: 'string', nullable: true },
+            },
+          },
+        },
+        pagination: {
+          type: 'object',
+          properties: {
+            page: { type: 'number' },
+            limit: { type: 'number' },
+            total: { type: 'number' },
+            totalPages: { type: 'number' },
+          },
         },
       },
     },
   })
-  async getAllUsers(): Promise<
-    Array<{
+  async getAllUsers(@Query() query: UsersQueryDto): Promise<{
+    data: Array<{
       id: string;
       firstName: string | null;
       lastName: string | null;
@@ -909,9 +962,23 @@ export class UsersController {
       role: AppRole | null;
       schoolId: string | null;
       schoolName: string | null;
-    }>
-  > {
-    return this.usersService.findAllUsersWithRolesAndSchools();
+    }>;
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+    };
+  }> {
+    return this.usersService.findAllUsersWithRolesAndSchools({
+      page: query.page,
+      limit: query.limit,
+      search: query.search,
+      role: query.role,
+      status: query.status,
+      sortBy: query.sortBy,
+      sortOrder: query.sortOrder,
+    });
   }
 
   @Get(':id/roles')

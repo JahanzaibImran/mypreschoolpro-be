@@ -1,19 +1,21 @@
-import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
-import { BaseEntity } from '../../../common/entities/base.entity';
+import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, CreateDateColumn } from 'typeorm';
 import { LeadEntity } from './lead.entity';
 
 @Entity('lead_interactions')
-export class LeadInteraction extends BaseEntity {
+export class LeadInteraction {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
   @Column({ name: 'lead_id', type: 'uuid' })
   leadId: string;
 
   @Column({ name: 'user_id', type: 'uuid' })
   userId: string;
 
-  @Column({ name: 'interaction_type', type: 'varchar', length: 100 })
+  @Column({ name: 'interaction_type', type: 'text' })
   interactionType: string;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
+  @Column({ type: 'text', nullable: true })
   subject: string | null;
 
   @Column({ type: 'text', nullable: true })
@@ -21,6 +23,9 @@ export class LeadInteraction extends BaseEntity {
 
   @Column({ name: 'interaction_date', type: 'timestamptz', default: () => 'now()' })
   interactionDate: Date;
+
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt: Date;
 
   // Relations
   @ManyToOne(() => LeadEntity, { onDelete: 'CASCADE' })

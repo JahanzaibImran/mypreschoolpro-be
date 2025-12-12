@@ -1,4 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsString, IsNotEmpty, IsOptional, IsEnum, IsInt, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ParentMessageType } from '../../communications/entities/parent-message.entity';
 
 export class ParentChildEnrollmentDto {
@@ -135,12 +137,18 @@ export class ParentDailyReportDto {
 
 export class SendParentMessageDto {
   @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
   subject: string;
 
   @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
   message: string;
 
   @ApiPropertyOptional({ enum: ParentMessageType })
+  @IsOptional()
+  @IsEnum(ParentMessageType)
   messageType?: ParentMessageType;
 }
 
@@ -220,6 +228,55 @@ export class ParentMediaDto {
 
   @ApiProperty()
   createdAt: string;
+}
+
+export class ParentReportsQueryDto {
+  @ApiProperty({ description: 'Page number (1-indexed)', example: 1, required: false, default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiProperty({ description: 'Number of items per page', example: 10, required: false, default: 10, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number = 10;
+
+  @ApiProperty({ description: 'Search term for child name, activities, meals, notes', example: 'John', required: false })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiProperty({ description: 'Filter by child ID (leadId)', example: 'uuid', required: false })
+  @IsOptional()
+  @IsString()
+  childId?: string;
+
+  @ApiProperty({ description: 'Field to sort by', example: 'reportDate', required: false, enum: ['reportDate', 'createdAt'] })
+  @IsOptional()
+  @IsEnum(['reportDate', 'createdAt'])
+  sortBy?: 'reportDate' | 'createdAt' = 'reportDate';
+
+  @ApiProperty({ description: 'Sort order', example: 'desc', required: false, enum: ['asc', 'desc'] })
+  @IsOptional()
+  @IsEnum(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc' = 'desc';
+}
+
+export class ParentReportsResponseDto {
+  @ApiProperty({ type: [ParentDailyReportDto] })
+  data: Array<ParentDailyReportDto & { leadId: string; childName: string }>;
+
+  @ApiProperty()
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
 }
 
 

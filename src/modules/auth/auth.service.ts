@@ -317,10 +317,22 @@ export class AuthService {
    * Update user email address (using Supabase Admin API)
    */
   async updateEmail(userId: string, newEmail: string): Promise<void> {
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(newEmail)) {
+      throw new BadRequestException('Invalid email format');
+    }
+
+    // Validate userId
+    if (!userId || typeof userId !== 'string') {
+      throw new BadRequestException('Invalid user ID');
+    }
+
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
     const supabaseServiceKey = this.configService.get<string>('SUPABASE_SERVICE_ROLE_KEY');
 
     if (!supabaseUrl || !supabaseServiceKey) {
+      this.logger.error('Supabase configuration missing - URL or Service Role Key not set');
       throw new BadRequestException('Supabase configuration missing');
     }
 
@@ -329,15 +341,109 @@ export class AuthService {
       auth: { persistSession: false },
     });
 
+    // Verify user exists before attempting update
+    try {
+      const { data: userData, error: getUserError } = await supabaseAdmin.auth.admin.getUserById(userId);
+      if (getUserError || !userData?.user) {
+        this.logger.error(`User not found: ${userId}`, getUserError);
+        throw new BadRequestException('User not found');
+      }
+      this.logger.log(`Found user ${userId}, current email: ${userData.user.email}`);
+    } catch (error: any) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      this.logger.error(`Error verifying user existence: ${error.message}`);
+      throw new BadRequestException('Unable to verify user. Please try again.');
+    }
+
+    // Check if email is already in use by another user (skip if updating to same email)
+    try {
+      const { data: existingUser } = await supabaseAdmin.auth.admin.getUserByEmail(newEmail);
+      if (existingUser?.user && existingUser.user.id !== userId) {
+        throw new BadRequestException('Email is already in use by another user');
+      }
+    } catch (error: any) {
+      // If error is not about user not found, and not our BadRequestException, log it
+      if (!(error instanceof BadRequestException)) {
+        if (error.message && !error.message.includes('not found')) {
+          this.logger.warn(`Error checking existing email: ${error.message}`);
+        }
+      } else {
+        // Re-throw BadRequestException (email already in use)
+        throw error;
+      }
+    }
+
     // Update email in Supabase Auth
-    const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+    this.logger.log(`Attempting to update email for user ${userId} to ${newEmail}`);
+    
+    // Try updating with email_confirm: false first
+    let updateResult = await supabaseAdmin.auth.admin.updateUserById(userId, {
       email: newEmail,
       email_confirm: false, // Require email verification
     });
 
-    if (error) {
-      throw new BadRequestException(`Failed to update email: ${error.message}`);
+    // If that fails with unexpected_failure, try without email_confirm flag
+    if (updateResult.error && (updateResult.error as any).code === 'unexpected_failure') {
+      this.logger.warn(`First attempt failed, trying alternative update method`);
+      updateResult = await supabaseAdmin.auth.admin.updateUserById(userId, {
+        email: newEmail,
+      });
     }
+
+    const { data, error } = updateResult;
+
+    if (error) {
+      this.logger.error(`Supabase error updating email for user ${userId}:`, {
+        message: error.message,
+        status: error.status,
+        name: error.name,
+        code: (error as any).code,
+        error: JSON.stringify(error),
+      });
+      
+      // Handle specific Supabase error codes
+      const errorCode = (error as any).code || '';
+      const errorMessage = error.message?.toLowerCase() || '';
+      
+      // Handle unexpected_failure (500) - usually indicates Supabase internal issue or permission problem
+      if (errorCode === 'unexpected_failure' || error.status === 500) {
+        this.logger.error(`Supabase unexpected_failure - This usually indicates:`);
+        this.logger.error(`1. Service role key may not have admin permissions`);
+        this.logger.error(`2. Supabase instance may have configuration issues`);
+        this.logger.error(`3. User may have constraints preventing email update`);
+        throw new BadRequestException(
+          'Unable to update email. This may be due to Supabase configuration or permissions. ' +
+          'Please verify the service role key has admin permissions and try again.'
+        );
+      }
+      
+      if (errorMessage.includes('already registered') || 
+          errorMessage.includes('already exists') ||
+          errorMessage.includes('duplicate') ||
+          error.status === 422 ||
+          errorCode === 'email_address_invalid' ||
+          errorCode === 'signup_disabled') {
+        throw new BadRequestException('Email is already in use by another user');
+      }
+      if (errorMessage.includes('invalid') || errorMessage.includes('format') || errorCode === 'validation_failed') {
+        throw new BadRequestException('Invalid email address format');
+      }
+      if (errorMessage.includes('not found') || error.status === 404 || errorCode === 'user_not_found') {
+        throw new BadRequestException('User not found');
+      }
+      if (error.status === 401 || error.status === 403 || errorCode === 'invalid_credentials') {
+        throw new BadRequestException('Permission denied. Please check Supabase service role key configuration.');
+      }
+      
+      // Return more detailed error message
+      throw new BadRequestException(
+        `Failed to update email: ${error.message || 'Unknown error'}${error.status ? ` (Status: ${error.status})` : ''}${errorCode ? ` [Code: ${errorCode}]` : ''}`
+      );
+    }
+
+    this.logger.log(`Successfully updated email for user ${userId} to ${newEmail}`);
 
     // Update email in profile
     const profile = await this.usersService.findProfileById(userId);

@@ -9,7 +9,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { AppRole } from '../../common/enums/app-role.enum';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../auth/interfaces/auth-user.interface';
-import { ParentChildDto, ParentDailyReportDto, SendParentMessageDto, ParentAttendanceDto, ParentProgressDto, ParentMediaDto } from './dto/parent-children.dto';
+import { ParentChildDto, ParentDailyReportDto, SendParentMessageDto, ParentAttendanceDto, ParentProgressDto, ParentMediaDto, ParentReportsQueryDto, ParentReportsResponseDto } from './dto/parent-children.dto';
 import { ParentInvoiceDto } from './dto/parent-dashboard-summary.dto';
 import { Query } from '@nestjs/common';
 
@@ -112,11 +112,14 @@ export class ParentDashboardController {
   @Roles(AppRole.PARENT)
   @ApiOperation({
     summary: 'Fetch all daily reports for the authenticated parent\'s children',
-    description: 'Returns all daily reports for all children of the parent in a single call, avoiding multiple sequential requests.',
+    description: 'Returns paginated daily reports for all children of the parent with support for search, filtering, and sorting.',
   })
-  @ApiResponse({ status: 200, type: [ParentDailyReportDto] })
-  async getAllReports(@CurrentUser() user: AuthUser): Promise<Array<ParentDailyReportDto & { leadId: string; childName: string }>> {
-    return this.parentDashboardService.getAllChildrenReports(user);
+  @ApiResponse({ status: 200, type: ParentReportsResponseDto })
+  async getAllReports(
+    @CurrentUser() user: AuthUser,
+    @Query() query: ParentReportsQueryDto,
+  ): Promise<ParentReportsResponseDto> {
+    return this.parentDashboardService.getAllChildrenReports(user, query);
   }
 }
 

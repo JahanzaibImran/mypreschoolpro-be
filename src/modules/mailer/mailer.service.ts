@@ -49,12 +49,14 @@ export class MailerService {
       this.logger.warn('Supabase not configured. Email logging will be disabled.');
     }
 
-    // Use verified Resend test domain by default, or custom verified domain via env
-    // Verified domains: onboarding@resend.dev, notifications@resend.dev
-    // Production: notifications@mypreschoolpro.com (must be verified in Resend)
+    // Use verified Resend subdomain: notifications@notifications.mypreschoolpro.com
+    // Subdomain notifications.mypreschoolpro.com is verified in Resend (DKIM, SPF, MX all green)
+    // API Key: re_LHtzYsTS_LhDv5UP2KkeRZF7ub998qhNB
+    // Production: notifications@notifications.mypreschoolpro.com (verified subdomain)
+    // Development/Test: onboarding@resend.dev (Resend test domain)
     this.fromEmail = this.configService.get<string>('email.fromEmail') || 
                      this.configService.get<string>('EMAIL_FROM') || 
-                     'onboarding@resend.dev';
+                     'notifications@notifications.mypreschoolpro.com';
     this.fromName = this.configService.get<string>('email.fromName') || 
                     this.configService.get<string>('EMAIL_FROM_NAME') || 
                     'MyPreschoolPro';
@@ -167,8 +169,31 @@ export class MailerService {
         ? [this.testModeEmail]
         : (Array.isArray(options.to) ? options.to : [options.to]);
       
+      // Ensure from field is always a valid string (never null or empty)
+      let fromEmail: string;
+      if (options.from && options.from !== null && options.from.trim() !== '') {
+        fromEmail = options.from;
+      } else {
+        // Use default format: "Name <email@domain.com>"
+        if (this.fromName && this.fromEmail) {
+          fromEmail = `${this.fromName} <${this.fromEmail}>`;
+        } else if (this.fromEmail) {
+          // Fallback to just email if name is missing
+          fromEmail = this.fromEmail;
+        } else {
+          // Last resort fallback - should never happen if service initialized correctly
+          fromEmail = 'notifications@notifications.mypreschoolpro.com';
+          this.logger.warn('⚠️  Using fallback from email address - service may not be initialized correctly');
+        }
+      }
+      
+      // Validate that fromEmail is not null or empty before sending
+      if (!fromEmail || fromEmail.trim() === '') {
+        throw new Error('Invalid from email address: cannot be null or empty');
+      }
+      
       const emailPayload = {
-        from: options.from || `${this.fromName} <${this.fromEmail}>`,
+        from: fromEmail,
         to: finalRecipients,
         subject: options.subject,
         html: options.html || undefined,
@@ -177,6 +202,8 @@ export class MailerService {
         cc: options.cc || undefined,
         bcc: options.bcc || undefined,
       } as any;
+      
+      this.logger.debug(`Sending email from: ${fromEmail}, to: ${finalRecipients.join(', ')}, subject: ${options.subject}`);
 
       // Send email via Resend
       if (!this.resend) {
@@ -247,7 +274,7 @@ export class MailerService {
    */
   async sendStaffInvitation(
     data: StaffInvitationData,
-  ): Promise<{ success: boolean; emailId?: string }> {
+  ): Promise<{ success: boolean; emailId?: string; skipped?: boolean; reason?: string; error?: string }> {
     this.logger.log(`Sending staff invitation to ${data.email} (role: ${data.role})`);
 
     const roleName = data.role.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase());

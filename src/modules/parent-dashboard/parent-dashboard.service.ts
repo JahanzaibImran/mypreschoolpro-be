@@ -17,6 +17,8 @@ import {
   ParentAttendanceDto,
   ParentProgressDto,
   ParentMediaDto,
+  ParentReportsQueryDto,
+  ParentReportsResponseDto,
 } from './dto/parent-children.dto';
 import { AuthUser } from '../auth/interfaces/auth-user.interface';
 import { PaymentStatus } from '../../common/enums/payment-status.enum';
@@ -228,10 +230,13 @@ export class ParentDashboardService {
     }));
   }
 
-  async getAllChildrenReports(user: AuthUser): Promise<Array<ParentDailyReportDto & { leadId: string; childName: string }>> {
+  async getAllChildrenReports(user: AuthUser, query: ParentReportsQueryDto = {}): Promise<ParentReportsResponseDto> {
     if (!user.email) {
       throw new BadRequestException('Parent email is required');
     }
+
+    const { page = 1, limit = 10, search, childId, sortBy = 'reportDate', sortOrder = 'desc' } = query;
+    const skip = (page - 1) * limit;
 
     // Find all leads (children) for this parent
     const leads = await this.leadRepository.find({
@@ -239,23 +244,45 @@ export class ParentDashboardService {
     });
 
     if (leads.length === 0) {
-      return [];
+      return {
+        data: [],
+        pagination: {
+          total: 0,
+          page,
+          limit,
+          totalPages: 0,
+        },
+      };
     }
 
-    const leadIds = leads.map((lead) => lead.id);
-    const leadNameMap = new Map(leads.map((lead) => [lead.id, lead.childName ?? '']));
+    // Filter by childId if provided
+    const filteredLeads = childId ? leads.filter(lead => lead.id === childId) : leads;
+    
+    if (filteredLeads.length === 0) {
+      return {
+        data: [],
+        pagination: {
+          total: 0,
+          page,
+          limit,
+          totalPages: 0,
+        },
+      };
+    }
+
+    const leadIds = filteredLeads.map((lead) => lead.id);
+    const leadNameMap = new Map(filteredLeads.map((lead) => [lead.id, lead.childName ?? '']));
 
     // Build query to fetch reports for all children
     // Match by studentId OR by student_names array containing child names
-    const childNames = leads.map((lead) => lead.childName).filter(Boolean);
+    const childNames = filteredLeads.map((lead) => lead.childName).filter(Boolean);
     
     // Use raw SQL for better performance with array matching
     const lowerChildNames = childNames.map(name => name.toLowerCase());
     
-    // Build dynamic query with proper parameter binding
-    const query = `
-      SELECT * FROM daily_reports
-      WHERE (
+    // Build WHERE conditions
+    const whereConditions: string[] = [
+      `(
         (student_id = ANY($1::uuid[]) AND student_id IS NOT NULL)
         OR (
           student_names IS NOT NULL 
@@ -264,16 +291,63 @@ export class ParentDashboardService {
             WHERE LOWER(name) = ANY($2::text[])
           )
         )
-      )
-      AND status = 'sent'
-      ORDER BY report_date DESC
-      LIMIT 100
+      )`,
+      `status = 'sent'`,
+    ];
+
+    const queryParams: any[] = [leadIds, lowerChildNames];
+    let paramIndex = 3;
+
+    // Add search filter if provided
+    if (search && search.trim()) {
+      whereConditions.push(
+        `(
+          LOWER(activities) LIKE $${paramIndex} OR
+          LOWER(meals) LIKE $${paramIndex} OR
+          LOWER(mood_behavior) LIKE $${paramIndex} OR
+          LOWER(notes) LIKE $${paramIndex} OR
+          EXISTS (
+            SELECT 1 FROM unnest(student_names) AS name
+            WHERE LOWER(name) LIKE $${paramIndex}
+          )
+        )`
+      );
+      queryParams.push(`%${search.toLowerCase()}%`);
+      paramIndex++;
+    }
+
+    // Build ORDER BY clause
+    const orderByField = sortBy === 'createdAt' ? 'created_at' : 'report_date';
+    const orderByDirection = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+    // Build count query for total
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM daily_reports
+      WHERE ${whereConditions.join(' AND ')}
     `;
 
-    const reports = await this.dataSource.query(query, [leadIds, lowerChildNames]);
+    // Build data query with pagination
+    const dataQuery = `
+      SELECT *
+      FROM daily_reports
+      WHERE ${whereConditions.join(' AND ')}
+      ORDER BY ${orderByField} ${orderByDirection}
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `;
+
+    queryParams.push(limit, skip);
+
+    // Execute queries
+    const [countResult, reports] = await Promise.all([
+      this.dataSource.query(countQuery, queryParams.slice(0, -2)), // Exclude limit and offset for count
+      this.dataSource.query(dataQuery, queryParams),
+    ]);
+
+    const total = parseInt(countResult[0]?.total || '0', 10);
 
     // Map reports and include leadId and childName
-    return reports.map((report: any) => {
+    const mappedReports = reports.map((report: any) => {
       // Find which lead this report belongs to
       let leadId = report.student_id || '';
       let childName = leadNameMap.get(leadId) || '';
@@ -304,6 +378,16 @@ export class ParentDashboardService {
         childName,
       };
     });
+
+    return {
+      data: mappedReports,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   private async getWaitlistEntries(

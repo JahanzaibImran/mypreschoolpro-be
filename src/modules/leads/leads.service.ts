@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { LeadEntity, LeadSource, LeadStatus } from './entities/lead.entity';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
@@ -21,6 +21,16 @@ import { RealtimeGateway, LeadRealtimeAction } from '../realtime/realtime.gatewa
 
 import { LeadStatusType } from '../../common/enums/lead-status-type.enum';
 import { AnalyzeWaitlistLeadDto, LeadAnalysisResponseDto } from './dto/analyze-waitlist-lead.dto';
+import { LeadInteraction } from './entities/lead-interaction.entity';
+import { StudentDocument } from '../students/entities/student-document.entity';
+import { ProfileEntity } from '../users/entities/profile.entity';
+import { UserRoleEntity } from '../users/entities/user-role.entity';
+import { CreateLeadInteractionDto } from './dto/create-lead-interaction.dto';
+import { UpdateLeadDetailsDto } from './dto/update-lead-details.dto';
+import { ConvertLeadDto } from './dto/convert-lead.dto';
+import { DataSource } from 'typeorm';
+import { Student } from '../students/entities/student.entity';
+import { AppRole } from '../../common/enums/app-role.enum';
 
 interface LeadCreationContext {
   createdBy?: string | null;
@@ -61,7 +71,18 @@ export class LeadsService {
     private readonly enrollmentRepository: Repository<EnrollmentEntity>,
     @InjectRepository(ClassEntity)
     private readonly classRepository: Repository<ClassEntity>,
+    @InjectRepository(LeadInteraction)
+    private readonly leadInteractionRepository: Repository<LeadInteraction>,
+    @InjectRepository(StudentDocument)
+    private readonly studentDocumentRepository: Repository<StudentDocument>,
+    @InjectRepository(ProfileEntity)
+    private readonly profileRepository: Repository<ProfileEntity>,
+    @InjectRepository(UserRoleEntity)
+    private readonly userRoleRepository: Repository<UserRoleEntity>,
+    @InjectRepository(Student)
+    private readonly studentRepository: Repository<Student>,
     private readonly realtimeGateway: RealtimeGateway,
+    private readonly dataSource: DataSource,
   ) { }
 
   /**
@@ -849,6 +870,12 @@ export class LeadsService {
         : null;
     }
 
+    if (updateLeadDto.tourDate !== undefined) {
+      payload.tourDate = updateLeadDto.tourDate
+        ? new Date(updateLeadDto.tourDate)
+        : null;
+    }
+
     if (updateLeadDto.programInterest !== undefined) {
       payload.program = updateLeadDto.programInterest;
     }
@@ -1278,6 +1305,204 @@ export class LeadsService {
     return {
       data: transformedData,
       capacityByProgram,
+    };
+  }
+
+  /**
+   * Get interactions for a lead
+   */
+  async getLeadInteractions(leadId: string): Promise<LeadInteraction[]> {
+    const interactions = await this.leadInteractionRepository.find({
+      where: { leadId },
+      order: { interactionDate: 'DESC' },
+      relations: ['lead'],
+    });
+
+    return interactions;
+  }
+
+  /**
+   * Create a new interaction for a lead
+   */
+  async createLeadInteraction(
+    leadId: string,
+    dto: CreateLeadInteractionDto,
+    userId: string,
+  ): Promise<LeadInteraction> {
+    const lead = await this.findOne(leadId);
+
+    const interaction = this.leadInteractionRepository.create({
+      leadId,
+      userId,
+      interactionType: dto.interaction_type,
+      subject: dto.subject || null,
+      content: dto.content,
+      interactionDate: new Date(),
+    });
+
+    const saved = await this.leadInteractionRepository.save(interaction);
+
+    // Update lead's last activity
+    await this.leadRepository.update(leadId, {
+      lastActivityAt: new Date(),
+    });
+
+    return saved;
+  }
+
+  /**
+   * Get documents for a lead (by student_id which is the lead_id)
+   */
+  async getLeadDocuments(leadId: string): Promise<StudentDocument[]> {
+    const documents = await this.studentDocumentRepository.find({
+      where: { studentId: leadId },
+      order: { createdAt: 'DESC' },
+    });
+
+    return documents;
+  }
+
+  /**
+   * Get missing required documents for a lead
+   */
+  async getMissingDocuments(leadId: string): Promise<string[]> {
+    const REQUIRED_DOCUMENTS = [
+      'Birth Certificate',
+      'Immunization Records',
+      'Emergency Contact Form',
+      'Medical Information Form',
+      'Photo ID',
+    ];
+
+    const documents = await this.getLeadDocuments(leadId);
+    const uploadedTypes = documents.map((doc) => doc.documentType);
+    const missing = REQUIRED_DOCUMENTS.filter((doc) => !uploadedTypes.includes(doc));
+
+    return missing;
+  }
+
+  /**
+   * Get assignable staff members for a school
+   */
+  async getAssignableStaff(schoolId: string): Promise<any[]> {
+    // Get user roles for school_admin and admissions_staff using QueryBuilder to avoid relation loading
+    const userRoles = await this.userRoleRepository
+      .createQueryBuilder('ur')
+      .select(['ur.userId', 'ur.role'])
+      .where('ur.schoolId = :schoolId', { schoolId })
+      .andWhere('ur.role IN (:...roles)', { roles: [AppRole.SCHOOL_ADMIN, AppRole.ADMISSIONS_STAFF] })
+      .getMany();
+
+    const userIds = userRoles.map((ur) => ur.userId).filter(Boolean);
+
+    if (userIds.length === 0) {
+      return [];
+    }
+
+    // Get profiles for these users
+    const profiles = await this.profileRepository.find({
+      where: { id: In(userIds) },
+    });
+
+    const profileMap = new Map(profiles.map((p) => [p.id, p]));
+
+    // Merge roles with profiles
+    return userRoles.map((ur) => {
+      const profile = profileMap.get(ur.userId);
+      return {
+        user_id: ur.userId,
+        first_name: profile?.firstName || null,
+        last_name: profile?.lastName || null,
+        email: profile?.email || null,
+        role: ur.role,
+      };
+    });
+  }
+
+  /**
+   * Update lead details (status, urgency, rating, assignment, follow-up date)
+   */
+  async updateLeadDetails(
+    leadId: string,
+    dto: UpdateLeadDetailsDto,
+    userId: string,
+  ): Promise<LeadEntity> {
+    const lead = await this.findOne(leadId);
+
+    const updateData: Partial<LeadEntity> = {};
+
+    if (dto.lead_status !== undefined) {
+      updateData.leadStatus = dto.lead_status;
+    }
+    if (dto.urgency !== undefined) {
+      updateData.urgency = dto.urgency;
+    }
+    if (dto.lead_rating !== undefined) {
+      updateData.leadRating = dto.lead_rating;
+    }
+    if (dto.assigned_to !== undefined) {
+      updateData.assignedTo = dto.assigned_to;
+    }
+    if (dto.follow_up_date !== undefined) {
+      updateData.followUpDate = dto.follow_up_date ? new Date(dto.follow_up_date) : null;
+    }
+
+    await this.leadRepository.update(leadId, updateData);
+
+    // Log activity for status changes
+    if (dto.lead_status && dto.lead_status !== lead.leadStatus) {
+      await this.leadInteractionRepository.save({
+        leadId,
+        userId,
+        interactionType: 'status_change',
+        subject: 'Status Updated',
+        content: `Status changed from ${lead.leadStatus} to ${dto.lead_status}`,
+        interactionDate: new Date(),
+      } as LeadInteraction);
+    }
+
+    return this.findOne(leadId);
+  }
+
+  /**
+   * Convert lead to student
+   */
+  async convertLeadToStudent(
+    leadId: string,
+    dto: ConvertLeadDto,
+    userId: string,
+  ): Promise<{ studentId: string; enrollmentId: string }> {
+    const lead = await this.findOne(leadId);
+
+    if (lead.leadStatus === LeadStatus.CONVERTED) {
+      throw new BadRequestException('Lead is already converted');
+    }
+
+    // Use the SQL function to convert
+    const result = await this.dataSource.query(
+      `SELECT convert_lead_to_student($1, $2, $3) as student_id`,
+      [leadId, dto.program || null, null],
+    );
+
+    const studentId = result[0]?.student_id;
+
+    if (!studentId) {
+      throw new BadRequestException('Failed to convert lead to student');
+    }
+
+    // Find the enrollment that was created
+    const enrollment = await this.enrollmentRepository.findOne({
+      where: { leadId },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (!enrollment) {
+      throw new BadRequestException('Enrollment not found after conversion');
+    }
+
+    return {
+      studentId,
+      enrollmentId: enrollment.id,
     };
   }
 }

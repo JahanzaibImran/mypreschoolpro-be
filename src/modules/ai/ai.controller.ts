@@ -401,7 +401,7 @@ export class AiController {
   }
 
   @Post('analyze-developmental-milestones')
-  @Roles(AppRole.SUPER_ADMIN, AppRole.SCHOOL_OWNER, AppRole.SCHOOL_ADMIN, AppRole.TEACHER)
+  @Roles(AppRole.SUPER_ADMIN, AppRole.SCHOOL_OWNER, AppRole.SCHOOL_ADMIN, AppRole.TEACHER, AppRole.PARENT)
   @ApiOperation({
     summary: 'Analyze developmental milestones',
     description: 'AI analysis of student progress against age-appropriate developmental milestones',
