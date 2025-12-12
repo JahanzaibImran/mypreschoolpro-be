@@ -22,7 +22,7 @@ async function bootstrap() {
 
   // CORS
   app.enableCors({
-    origin: [frontendUrl, 'http://localhost:5173', 'http://localhost:3000' , 'http://localhost:8080'],
+    origin: [frontendUrl, 'http://localhost:5173', 'http://localhost:3000' , 'http://localhost:8080' , "https://mypreschoolpro.lovable.app"],
     credentials: true,
   });
 
