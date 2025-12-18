@@ -15,7 +15,7 @@ import { LeadInvoice } from './entities/lead-invoice.entity';
 import { SchoolEntity } from '../schools/entities/school.entity';
 import { CreateParentLeadDto } from './dto/create-parent-lead.dto';
 import { Waitlist } from '../enrollment/entities/waitlist.entity';
-import { EnrollmentEntity } from '../enrollment/entities/enrollment.entity';
+import { EnrollmentEntity, EnrollmentStatus } from '../enrollment/entities/enrollment.entity';
 import { ClassEntity } from '../classes/entities/class.entity';
 import { RealtimeGateway, LeadRealtimeAction } from '../realtime/realtime.gateway';
 
@@ -506,6 +506,67 @@ export class LeadsService {
     // convertedAt doesn't exist in database schema - use conversion_date instead
     if (status === LeadStatus.CONVERTED && !lead.conversionDate) {
       lead.conversionDate = new Date();
+    }
+
+    // If status is ENROLLED, ensure student record and enrollment exist
+    if (status === LeadStatus.ENROLLED) {
+      // Split child name for matching
+      const nameParts = lead.childName.trim().split(/\s+/);
+      const firstName = nameParts[0] || lead.childName;
+      const lastName = nameParts.slice(1).join(' ') || '';
+
+      // Check if student already exists (by parent email, school, and first name to match the child)
+      const existingStudent = await this.studentRepository
+        .createQueryBuilder('student')
+        .where('LOWER(student.parentEmail) = LOWER(:parentEmail)', { parentEmail: lead.parentEmail })
+        .andWhere('student.schoolId = :schoolId', { schoolId: lead.schoolId })
+        .andWhere('LOWER(student.firstName) = LOWER(:firstName)', { firstName })
+        .getOne();
+
+      let studentId: string | null = null;
+
+      if (!existingStudent) {
+        // Create student record from lead
+        const student = this.studentRepository.create({
+          firstName,
+          lastName,
+          parentEmail: lead.parentEmail,
+          schoolId: lead.schoolId,
+          program: lead.program || '',
+          dob: lead.childBirthdate,
+          teacherId: lead.assignedTo,
+        });
+        const savedStudent = await this.studentRepository.save(student);
+        studentId = savedStudent.id;
+        this.logger.log(`Created student record ${studentId} for enrolled lead ${id}`);
+      } else {
+        studentId = existingStudent.id;
+        this.logger.log(`Student record ${studentId} already exists for enrolled lead ${id}`);
+      }
+
+      // Check if enrollment already exists for this lead
+      const existingEnrollment = await this.enrollmentRepository.findOne({
+        where: { leadId: id },
+        order: { createdAt: 'DESC' },
+      });
+
+      if (!existingEnrollment) {
+        // Create enrollment record
+        const enrollment = this.enrollmentRepository.create({
+          leadId: id,
+          schoolId: lead.schoolId,
+          program: lead.program || '',
+          status: EnrollmentStatus.ACTIVE,
+          startDate: new Date(),
+        });
+        await this.enrollmentRepository.save(enrollment);
+        this.logger.log(`Created enrollment record ${enrollment.id} for enrolled lead ${id}`);
+      }
+
+      // Set conversion date if not already set
+      if (!lead.conversionDate) {
+        lead.conversionDate = new Date();
+      }
     }
 
     const savedLead = await this.leadRepository.save(lead);

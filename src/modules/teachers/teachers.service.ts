@@ -2030,6 +2030,7 @@ export class TeachersService {
       recurring: event.recurring,
       teacherId: event.teacherId,
       schoolId: event.schoolId,
+      classId: event.classId,
       createdAt: event.createdAt.toISOString(),
       updatedAt: event.updatedAt.toISOString(),
     }));
@@ -2057,6 +2058,7 @@ export class TeachersService {
     const event = this.scheduleEventRepository.create({
       teacherId,
       schoolId: userRole.schoolId,
+      classId: dto.classId || null,
       title: dto.title,
       description: dto.description || null,
       eventDate: new Date(dto.eventDate),
@@ -2085,6 +2087,7 @@ export class TeachersService {
       recurring: saved.recurring,
       teacherId: saved.teacherId,
       schoolId: saved.schoolId,
+      classId: saved.classId,
       createdAt: saved.createdAt.toISOString(),
       updatedAt: saved.updatedAt.toISOString(),
     };
@@ -2120,6 +2123,7 @@ export class TeachersService {
     if (dto.startTime !== undefined) event.startTime = dto.startTime;
     if (dto.endTime !== undefined) event.endTime = dto.endTime;
     if (dto.eventType !== undefined) event.eventType = dto.eventType;
+    if (dto.classId !== undefined) event.classId = dto.classId || null;
     if (dto.location !== undefined) event.location = dto.location;
     if (dto.notes !== undefined) event.notes = dto.notes;
     if (dto.recurring !== undefined) event.recurring = dto.recurring;
@@ -2141,9 +2145,73 @@ export class TeachersService {
       recurring: updated.recurring,
       teacherId: updated.teacherId,
       schoolId: updated.schoolId,
+      classId: updated.classId,
       createdAt: updated.createdAt.toISOString(),
       updatedAt: updated.updatedAt.toISOString(),
     };
+  }
+
+  /**
+   * Get class schedule for parent (view their child's class schedule)
+   */
+  async getClassScheduleForParent(
+    parentId: string,
+    classId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<ScheduleEventResponseDto[]> {
+    this.logger.log(`Fetching class schedule for parent ${parentId}, class ${classId}`);
+
+    // Verify parent has a child in this class via enrollment
+    const enrollment = await this.enrollmentRepository
+      .createQueryBuilder('enrollment')
+      .innerJoin('parent_students', 'ps', 'ps.student_id = enrollment.lead_id')
+      .where('ps.parent_id = :parentId', { parentId })
+      .andWhere('enrollment.class_id = :classId', { classId })
+      .andWhere('enrollment.status = :status', { status: EnrollmentStatus.ACTIVE })
+      .getOne();
+
+    if (!enrollment) {
+      throw new ForbiddenException('You do not have access to this class schedule');
+    }
+
+    // Parse dates
+    const start = new Date(startDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+
+    // Get all schedule events for this class (from any teacher)
+    const events = await this.scheduleEventRepository.find({
+      where: {
+        classId,
+        eventDate: Between(start, end),
+      },
+      order: {
+        eventDate: 'ASC',
+        startTime: 'ASC',
+      },
+    });
+
+    return events.map((event) => ({
+      id: event.id,
+      title: event.title,
+      description: event.description,
+      eventDate: event.eventDate instanceof Date
+        ? event.eventDate.toISOString().split('T')[0]
+        : event.eventDate,
+      startTime: event.startTime,
+      endTime: event.endTime,
+      eventType: event.eventType,
+      location: event.location,
+      notes: event.notes,
+      recurring: event.recurring,
+      teacherId: event.teacherId,
+      schoolId: event.schoolId,
+      classId: event.classId,
+      createdAt: event.createdAt.toISOString(),
+      updatedAt: event.updatedAt.toISOString(),
+    }));
   }
 
   /**

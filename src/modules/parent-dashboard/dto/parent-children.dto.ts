@@ -18,6 +18,9 @@ export class ParentChildEnrollmentDto {
 
   @ApiPropertyOptional()
   tuitionAmount: number | null;
+
+  @ApiPropertyOptional()
+  classId: string | null;
 }
 
 export class ParentChildWaitlistDto {

@@ -22,7 +22,12 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
             cd ${{ secrets.PROJECT_DIR }}
-            
+
+            # Stash any local changes (if any)
+            git stash push -m "auto-stash-before-deploy" || true
+            git pull origin main
+            git stash pop || true
+
             # Load NVM so node, npm, pm2 are available
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
@@ -33,5 +38,5 @@ jobs:
             npm run build
 
             # Reload backend using PM2
-            pm2 reload mypreschool-backend || pm2 start dist/main.js --name mypreschool-backend
+            pm2 reload mypreschoolpro || pm2 start dist/main.js --name mypreschoolpro
           EOF

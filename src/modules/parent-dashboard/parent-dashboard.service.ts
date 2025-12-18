@@ -546,6 +546,7 @@ export class ParentDashboardService {
       startDate: row.start_date ? new Date(row.start_date).toISOString() : null,
       endDate: row.end_date ? new Date(row.end_date).toISOString() : null,
       tuitionAmount: row.tuition_amount !== null ? Number(row.tuition_amount) : null,
+      classId: row.class_id || null,
     };
   }
 

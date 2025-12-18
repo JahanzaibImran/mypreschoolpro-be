@@ -1,5 +1,4 @@
-import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
-import { BaseEntity } from '../../../common/entities/base.entity';
+import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, CreateDateColumn } from 'typeorm';
 import { LeadEntity } from './lead.entity';
 import { SchoolEntity } from '../../schools/entities/school.entity';
 
@@ -10,7 +9,12 @@ export enum WorkflowNotificationStatus {
 }
 
 @Entity('lead_workflow_notifications')
-export class LeadWorkflowNotification extends BaseEntity {
+export class LeadWorkflowNotification {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt: Date;
   @Column({ name: 'lead_id', type: 'uuid' })
   leadId: string;
 

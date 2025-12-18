@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsDateString, IsEnum, IsOptional, IsBoolean, MaxLength } from 'class-validator';
+import { IsString, IsNotEmpty, IsDateString, IsEnum, IsOptional, IsBoolean, MaxLength, IsUUID } from 'class-validator';
 import { TeacherScheduleEventType } from '../entities/teacher-schedule-event.entity';
 
 export class CreateScheduleEventDto {
@@ -31,6 +31,11 @@ export class CreateScheduleEventDto {
   @ApiProperty({ description: 'Event type', enum: TeacherScheduleEventType, example: TeacherScheduleEventType.LESSON })
   @IsEnum(TeacherScheduleEventType)
   eventType: TeacherScheduleEventType;
+
+  @ApiPropertyOptional({ description: 'Class ID (for class schedule events)', example: '123e4567-e89b-12d3-a456-426614174000' })
+  @IsOptional()
+  @IsUUID()
+  classId?: string;
 
   @ApiPropertyOptional({ description: 'Location/room', example: 'Classroom A', maxLength: 255 })
   @IsOptional()

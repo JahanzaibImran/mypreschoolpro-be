@@ -16,10 +16,12 @@ import { LeadEntity } from '../leads/entities/lead.entity';
 import { LeadActivity } from '../leads/entities/lead-activity.entity';
 import { Media } from '../media/entities/media.entity';
 import { LeadsModule } from '../leads/leads.module';
+import { TeachersModule } from '../teachers/teachers.module';
 
 @Module({
   imports: [
     LeadsModule,
+    TeachersModule,
     TypeOrmModule.forFeature([
       Waitlist,
       EnrollmentEntity,

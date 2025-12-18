@@ -38,6 +38,9 @@ export class ScheduleEventResponseDto {
   @ApiProperty({ description: 'School ID', format: 'uuid' })
   schoolId: string;
 
+  @ApiProperty({ description: 'Class ID (for class schedule events)', format: 'uuid', nullable: true })
+  classId: string | null;
+
   @ApiProperty({ description: 'Creation timestamp', format: 'date-time' })
   createdAt: string;
 

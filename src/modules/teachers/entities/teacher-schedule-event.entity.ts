@@ -1,5 +1,6 @@
-import { Column, Entity } from 'typeorm';
+import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
 import { BaseEntity } from '../../../common/entities/base.entity';
+import { ClassEntity } from '../../classes/entities/class.entity';
 
 export enum TeacherScheduleEventType {
   LESSON = 'lesson',
@@ -18,6 +19,9 @@ export class TeacherScheduleEvent extends BaseEntity {
 
   @Column({ name: 'school_id', type: 'uuid' })
   schoolId: string;
+
+  @Column({ name: 'class_id', type: 'uuid', nullable: true })
+  classId: string | null;
 
   @Column({ type: 'varchar', length: 255 })
   title: string;
@@ -49,6 +53,11 @@ export class TeacherScheduleEvent extends BaseEntity {
 
   @Column({ type: 'boolean', default: false })
   recurring: boolean;
+
+  // Relations
+  @ManyToOne(() => ClassEntity, { nullable: true })
+  @JoinColumn({ name: 'class_id' })
+  class: ClassEntity | null;
 }
 
 

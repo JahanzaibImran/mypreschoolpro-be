@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags, ApiQuery } from '@nestjs/swagger';
 import { ParentDashboardService } from './parent-dashboard.service';
 import { ParentDashboardSummaryDto } from './dto/parent-dashboard-summary.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -11,14 +11,18 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../auth/interfaces/auth-user.interface';
 import { ParentChildDto, ParentDailyReportDto, SendParentMessageDto, ParentAttendanceDto, ParentProgressDto, ParentMediaDto, ParentReportsQueryDto, ParentReportsResponseDto } from './dto/parent-children.dto';
 import { ParentInvoiceDto } from './dto/parent-dashboard-summary.dto';
-import { Query } from '@nestjs/common';
+import { TeachersService } from '../teachers/teachers.service';
+import { ScheduleEventResponseDto } from '../teachers/dto/schedule-event-response.dto';
 
 @ApiTags('Parent Dashboard')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('parent/dashboard')
 export class ParentDashboardController {
-  constructor(private readonly parentDashboardService: ParentDashboardService) {}
+  constructor(
+    private readonly parentDashboardService: ParentDashboardService,
+    private readonly teachersService: TeachersService,
+  ) {}
 
   @Get('summary')
   @Roles(AppRole.PARENT)
@@ -120,6 +124,29 @@ export class ParentDashboardController {
     @Query() query: ParentReportsQueryDto,
   ): Promise<ParentReportsResponseDto> {
     return this.parentDashboardService.getAllChildrenReports(user, query);
+  }
+
+  @Get('class-schedule')
+  @Roles(AppRole.PARENT)
+  @ApiOperation({
+    summary: 'Get class schedule for parent',
+    description: 'Returns the class schedule for a parent\'s child\'s class',
+  })
+  @ApiQuery({ name: 'classId', required: true, description: 'Class ID' })
+  @ApiQuery({ name: 'startDate', required: true, description: 'Start date (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'endDate', required: true, description: 'End date (YYYY-MM-DD)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Class schedule retrieved successfully',
+    type: [ScheduleEventResponseDto],
+  })
+  async getClassSchedule(
+    @Query('classId') classId: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @CurrentUser() user: AuthUser,
+  ): Promise<ScheduleEventResponseDto[]> {
+    return this.teachersService.getClassScheduleForParent(user.id, classId, startDate, endDate);
   }
 }
 

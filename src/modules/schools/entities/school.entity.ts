@@ -91,6 +91,12 @@ export class SchoolEntity extends BaseEntity {
   @Column({ type: 'numeric', nullable: true })
   longitude: number | null;
 
+  @Column({ type: 'integer', nullable: true, name: 'geofence_radius_meters' })
+  geofenceRadiusMeters: number | null;
+
+  @Column({ type: 'jsonb', nullable: true, name: 'geofence_center' })
+  geofenceCenter: { lat: number; lng: number } | null;
+
   @OneToMany(() => UserRoleEntity, (role) => role.school)
   userRoles: UserRoleEntity[];
 

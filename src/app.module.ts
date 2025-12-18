@@ -38,6 +38,10 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ParentDashboardModule } from './modules/parent-dashboard/parent-dashboard.module';
 import { ParentRegistrationModule } from './modules/parent-registration/parent-registration.module';
 import { SettingsModule } from './modules/settings/settings.module';
+import { CheckInOutModule } from './modules/checkinout/checkinout.module';
+import { IncidentsModule } from './modules/incidents/incidents.module';
+import { HealthModule } from './modules/health/health.module';
+import { CalendarModule } from './modules/calendar/calendar.module';
 import { APP_GUARD } from '@nestjs/core';
 import { RolesGuard } from './common/guards/roles.guard';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -79,7 +83,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
       ttl: 60000, // 60 seconds
       limit: 10, // 10 requests per minute
     },
-  ]), AuthModule, LeadsModule, PaymentsModule, EnrollmentModule, EmailModule, AiModule, CampaignsModule, AnalyticsModule, UsersModule, SchoolsModule, ClassesModule, MediaModule, NotificationsModule, MailerModule, InvoicesModule, StudentsModule, FormsModule, TeachersModule, CommunicationsModule, TasksModule, ReportsModule, BlogsModule, WaitlistModule, DashboardModule, ParentDashboardModule, ParentRegistrationModule, SettingsModule],
+  ]), AuthModule, LeadsModule, PaymentsModule, EnrollmentModule, EmailModule, AiModule, CampaignsModule, AnalyticsModule, UsersModule, SchoolsModule, ClassesModule, MediaModule, NotificationsModule, MailerModule, InvoicesModule, StudentsModule, FormsModule, TeachersModule, CommunicationsModule, TasksModule, ReportsModule, BlogsModule, WaitlistModule, DashboardModule, ParentDashboardModule, ParentRegistrationModule, SettingsModule, CheckInOutModule, IncidentsModule, HealthModule, CalendarModule],
   controllers: [AppController],
   providers: [AppService, {
     provide: APP_GUARD,
