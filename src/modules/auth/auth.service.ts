@@ -34,7 +34,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     @InjectRepository(ImpersonationSession)
     private readonly impersonationRepository: Repository<ImpersonationSession>,
-  ) {}
+  ) { }
 
   async register(registerDto: RegisterDto) {
     const existingUser = await this.usersService.findByEmail(registerDto.email);
@@ -248,11 +248,11 @@ export class AuthService {
       schoolId,
       profile: profile
         ? {
-            firstName: profile.firstName,
-            lastName: profile.lastName,
-            phone: profile.phone,
-            status: profile.status,
-          }
+          firstName: profile.firstName,
+          lastName: profile.lastName,
+          phone: profile.phone,
+          status: profile.status,
+        }
         : undefined,
     };
   }
@@ -378,7 +378,7 @@ export class AuthService {
     // Update email in Supabase Auth
     this.logger.log(`Attempting to update email for user ${userId} to ${newEmail}`);
     this.logger.log(`Supabase URL configured: ${!!supabaseUrl}, Service Key configured: ${!!supabaseServiceKey}`);
-    
+
     let updateResult: any = null;
     let error: any = null;
     let data: any = null;
@@ -411,18 +411,18 @@ export class AuthService {
       try {
         this.logger.log(`Trying update strategy: ${strategy.name}`);
         updateResult = await supabaseAdmin.auth.admin.updateUserById(userId, strategy.options);
-        
+
         if (updateResult.error) {
           const errorCode = (updateResult.error as any).code || '';
           const errorStatus = updateResult.error.status;
-          
+
           // If it's not unexpected_failure or 500, this might be a different issue
           if (errorCode !== 'unexpected_failure' && errorStatus !== 500) {
             error = updateResult.error;
             data = updateResult.data;
             break; // Exit loop, we have a specific error
           }
-          
+
           // If it's unexpected_failure, try next strategy
           this.logger.warn(`Strategy ${strategy.name} failed with ${errorCode}, trying next...`);
           continue;
@@ -457,18 +457,18 @@ export class AuthService {
         code: (error as any).code,
         error: JSON.stringify(error),
       });
-      
+
       // Handle specific Supabase error codes
       const errorCode = (error as any).code || '';
       const errorMessage = error.message?.toLowerCase() || '';
-      
+
       // Handle unexpected_failure (500) - usually indicates Supabase internal issue or permission problem
       if (errorCode === 'unexpected_failure' || error.status === 500) {
         this.logger.error(`Supabase unexpected_failure - This usually indicates:`);
         this.logger.error(`1. Service role key may not have admin permissions`);
         this.logger.error(`2. Supabase instance may have configuration issues`);
         this.logger.error(`3. User may have constraints preventing email update`);
-        
+
         // As a fallback, update the profile email even if Supabase Auth update fails
         // This allows the system to continue functioning
         try {
@@ -480,17 +480,17 @@ export class AuthService {
             };
             await (this.usersService as any).upsertProfile(profileUpdate);
             this.logger.warn(`Updated profile email as fallback, but Supabase Auth update failed`);
-            
+
             // Clear cache
             await this.clearUserCache(userId);
-            
+
             // Log warning but don't throw - allow the update to proceed
             // The profile email is updated, which is the most important part
             this.logger.warn(
               `Email update completed with fallback: Profile email updated to ${newEmail}, ` +
               `but Supabase Auth update failed. User may need to verify email manually.`
             );
-            
+
             // Return early - profile update succeeded
             return;
           }
@@ -498,19 +498,19 @@ export class AuthService {
           // If fallback also fails, log and continue to throw original error
           this.logger.error(`Fallback profile update also failed: ${fallbackError.message}`);
         }
-        
+
         throw new BadRequestException(
           'Unable to update email. This may be due to Supabase configuration or permissions. ' +
           'Please verify the service role key has admin permissions and try again.'
         );
       }
-      
-      if (errorMessage.includes('already registered') || 
-          errorMessage.includes('already exists') ||
-          errorMessage.includes('duplicate') ||
-          error.status === 422 ||
-          errorCode === 'email_address_invalid' ||
-          errorCode === 'signup_disabled') {
+
+      if (errorMessage.includes('already registered') ||
+        errorMessage.includes('already exists') ||
+        errorMessage.includes('duplicate') ||
+        error.status === 422 ||
+        errorCode === 'email_address_invalid' ||
+        errorCode === 'signup_disabled') {
         throw new BadRequestException('Email is already in use by another user');
       }
       if (errorMessage.includes('invalid') || errorMessage.includes('format') || errorCode === 'validation_failed') {
@@ -522,7 +522,7 @@ export class AuthService {
       if (error.status === 401 || error.status === 403 || errorCode === 'invalid_credentials') {
         throw new BadRequestException('Permission denied. Please check Supabase service role key configuration.');
       }
-      
+
       // Return more detailed error message
       throw new BadRequestException(
         `Failed to update email: ${error.message || 'Unknown error'}${error.status ? ` (Status: ${error.status})` : ''}${errorCode ? ` [Code: ${errorCode}]` : ''}`
@@ -570,13 +570,31 @@ export class AuthService {
     // use Supabase's updateUser method which requires the user to be authenticated
     // For now, we'll update directly using Admin API (trusting the frontend validation)
 
+    // Verify current password by attempting to sign in
+    const profile = await this.usersService.findProfileById(userId);
+    if (!profile || !profile.email) {
+      throw new BadRequestException('User profile or email not found');
+    }
+
     const { createClient } = require('@supabase/supabase-js');
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey, {
       auth: { persistSession: false },
     });
 
+    // Try to sign in with current password
+    const { error: signInError } = await supabaseClient.auth.signInWithPassword({
+      email: profile.email,
+      password: currentPassword,
+    });
+
+    if (signInError) {
+      this.logger.warn(`Password update failed: Invalid current password for user ${userId}`);
+      throw new BadRequestException('Incorrect current password');
+    }
+
     // Update password in Supabase Auth
-    const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+    // Use Admin API to ensure update happens regardless of session state
+    const { error } = await supabaseClient.auth.admin.updateUserById(userId, {
       password: newPassword,
     });
 

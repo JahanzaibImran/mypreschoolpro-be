@@ -26,7 +26,7 @@ export class SchoolsService {
     @InjectRepository(Waitlist)
     private readonly waitlistRepository: Repository<Waitlist>,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   /**
    * Create a new school
@@ -66,6 +66,9 @@ export class SchoolsService {
   }): Promise<{ data: SchoolEntity[]; total: number }> {
     const { status, ownerId, schoolId, limit = 100, offset = 0, order = 'DESC' } = options || {};
 
+    // Debug logging
+    this.logger.log(`findAll called with status: ${status}, ownerId: ${ownerId}, schoolId: ${schoolId}`);
+
     const queryBuilder = this.schoolRepository.createQueryBuilder('school');
 
     if (status) {
@@ -80,12 +83,19 @@ export class SchoolsService {
       queryBuilder.andWhere('school.id = :schoolId', { schoolId });
     }
 
+
+    console.log(queryBuilder);
+
+
     queryBuilder
       .orderBy('school.created_at', order)
       .skip(offset)
       .take(limit);
 
     const [data, total] = await queryBuilder.getManyAndCount();
+
+    // Debug logging
+    this.logger.log(`findAll returning ${data.length} schools (total: ${total}). Status breakdown: Active=${data.filter(s => s.status === 'active').length}, Inactive=${data.filter(s => s.status === 'inactive').length}`);
 
     return { data, total };
   }

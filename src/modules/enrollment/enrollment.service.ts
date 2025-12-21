@@ -27,7 +27,7 @@ export class EnrollmentService {
     private readonly leadsService: LeadsService,
     private readonly s3Service: S3Service,
     private readonly mailerService: MailerService,
-  ) {}
+  ) { }
 
   /**
    * Create a new enrollment
@@ -48,7 +48,7 @@ export class EnrollmentService {
       notes: createEnrollmentDto.notes ?? null,
     });
     const saveResult = await this.enrollmentRepository.save(enrollment);
-    
+
     // TypeORM save() can return array or single entity, ensure we have a single entity
     const savedEnrollment = Array.isArray(saveResult) ? saveResult[0] : saveResult;
 
@@ -56,13 +56,13 @@ export class EnrollmentService {
       throw new BadRequestException('Failed to create enrollment');
     }
 
-      try {
-        await this.leadsService.convertToEnrollment(
+    try {
+      await this.leadsService.convertToEnrollment(
         createEnrollmentDto.leadId,
-          savedEnrollment.id,
+        savedEnrollment.id,
         createdBy,
-        );
-      } catch (error: any) {
+      );
+    } catch (error: any) {
       this.logger.warn(`Failed to update lead ${createEnrollmentDto.leadId}: ${error.message}`);
     }
 
@@ -298,7 +298,7 @@ export class EnrollmentService {
 
     enrollments.forEach((enrollment) => {
       if (byStatus[enrollment.status] !== undefined) {
-      byStatus[enrollment.status]++;
+        byStatus[enrollment.status]++;
       }
       if (enrollment.status === EnrollmentStatus.ACTIVE) active++;
       if (enrollment.status === EnrollmentStatus.PENDING) pending++;
@@ -356,11 +356,11 @@ export class EnrollmentService {
 
       // Prepare email content
       const emailSubject = dto.emailSubject || `Enrollment Packet for ${dto.studentName}`;
-      const emailMessage = dto.emailMessage || 
+      const emailMessage = dto.emailMessage ||
         `Dear Parent,\n\nPlease find attached the enrollment packet for ${dto.studentName}. Kindly review, complete, and return it at your earliest convenience.\n\nIf you have any questions, please don't hesitate to contact us.\n\nBest regards`;
 
       // Convert newlines to HTML breaks and add download button
-      const htmlMessage = emailMessage.replace(/\n/g, '<br>') + 
+      const htmlMessage = emailMessage.replace(/\n/g, '<br>') +
         `<br><br><a href="${fileUrl}" style="display: inline-block; padding: 10px 20px; background-color: #0066cc; color: white; text-decoration: none; border-radius: 5px;">Download Enrollment Packet</a>`;
 
       // Send email via Resend
@@ -616,11 +616,14 @@ export class EnrollmentService {
       `SELECT 
         e.id,
         e.lead_id,
+        e.school_id,
         e.class_id,
         e.program,
         e.start_date,
         e.end_date,
         e.status,
+        e.tuition_amount,
+        e.registration_fee,
         e.created_at,
         l.child_name,
         l.parent_name,
@@ -637,11 +640,14 @@ export class EnrollmentService {
     return results.map((row: any) => ({
       id: row.id,
       lead_id: row.lead_id,
+      school_id: row.school_id,
       class_id: row.class_id,
       program: row.program,
       start_date: row.start_date,
       end_date: row.end_date,
       status: row.status,
+      tuition_amount: row.tuition_amount ? parseFloat(row.tuition_amount) : null,
+      registration_fee: row.registration_fee ? parseFloat(row.registration_fee) : null,
       created_at: row.created_at,
       leads: row.child_name ? {
         child_name: row.child_name,

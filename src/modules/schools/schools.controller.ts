@@ -41,13 +41,52 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../auth/interfaces/auth-user.interface';
 import { Public } from '../../common/decorators/public.decorator';
 import { FindSchoolsByLocationDto } from './dto/find-schools-by-location.dto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 
 @ApiTags('Schools')
 @ApiBearerAuth()
 // @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('schools')
 export class SchoolsController {
-  constructor(private readonly schoolsService: SchoolsService) {}
+  constructor(
+    private readonly schoolsService: SchoolsService,
+    @InjectRepository(SchoolEntity)
+    private readonly schoolRepository: Repository<SchoolEntity>,
+  ) { }
+
+  private async ensureUserCanManageSchool(user: AuthUser, schoolId?: string): Promise<void> {
+    if (!schoolId) {
+      throw new BadRequestException('schoolId is required');
+    }
+
+    if (user.primaryRole === AppRole.SUPER_ADMIN) {
+      return;
+    }
+
+    const accessible = new Set<string>();
+    if (user.schoolId) {
+      accessible.add(user.schoolId);
+    }
+    user.roles?.forEach((role) => {
+      if (role.schoolId) {
+        accessible.add(role.schoolId);
+      }
+    });
+
+    // Check if user owns the school
+    const isOwner = await this.schoolRepository.count({
+      where: { id: schoolId, ownerId: user.id },
+    });
+
+    if (isOwner > 0) {
+      return;
+    }
+
+    if (!accessible.has(schoolId)) {
+      throw new ForbiddenException('You can only manage your own school');
+    }
+  }
 
   @Post()
   @Roles(AppRole.SUPER_ADMIN, AppRole.SCHOOL_OWNER)
@@ -182,7 +221,7 @@ export class SchoolsController {
     // If no user is authenticated, only return active schools
     if (!user) {
       const result = await this.schoolsService.findAll({
-        status: SchoolStatus.ACTIVE,
+        status: status ? status : undefined,
         limit: limit ? Number(limit) : undefined,
         offset: offset ? Number(offset) : undefined,
         order: order || 'DESC',
@@ -327,7 +366,7 @@ export class SchoolsController {
     if (user.primaryRole !== AppRole.SUPER_ADMIN) {
       // Fetch the school to check ownership
       const school = await this.schoolsService.findOne(id);
-      
+
       if (user.primaryRole === AppRole.SCHOOL_OWNER) {
         // School owners can update any school they own
         if (school.ownerId !== user.id) {
@@ -374,7 +413,7 @@ export class SchoolsController {
     if (user.primaryRole !== AppRole.SUPER_ADMIN) {
       // Fetch the school to check ownership
       const school = await this.schoolsService.findOne(id);
-      
+
       // School owners can delete any school they own
       if (school.ownerId !== user.id) {
         throw new ForbiddenException('You can only delete schools you own');
@@ -417,7 +456,7 @@ export class SchoolsController {
     if (user.primaryRole !== AppRole.SUPER_ADMIN) {
       // Fetch the school to check ownership
       const school = await this.schoolsService.findOne(id);
-      
+
       // School owners can update status of any school they own
       if (school.ownerId !== user.id) {
         throw new ForbiddenException('You can only update status of schools you own');
@@ -472,10 +511,7 @@ export class SchoolsController {
     @Query('metricType') metricType: string,
     @CurrentUser() user: AuthUser,
   ) {
-    // RBAC: Non-super admins can only access their own school's analytics
-    if (user.primaryRole !== AppRole.SUPER_ADMIN && user.schoolId !== schoolId) {
-      throw new ForbiddenException('You can only access analytics for your own school');
-    }
+    await this.ensureUserCanManageSchool(user, schoolId);
 
     const analytics = await this.schoolsService.getLatestAnalytics(schoolId, metricType);
 
@@ -539,10 +575,7 @@ export class SchoolsController {
     @Body() body: { projectionMonths: number },
     @CurrentUser() user: AuthUser,
   ) {
-    // RBAC: Non-super admins can only project for their own school
-    if (user.primaryRole !== AppRole.SUPER_ADMIN && user.schoolId !== schoolId) {
-      throw new ForbiddenException('You can only generate projections for your own school');
-    }
+    await this.ensureUserCanManageSchool(user, schoolId);
 
     if (!body.projectionMonths || body.projectionMonths < 1 || body.projectionMonths > 12) {
       throw new BadRequestException('projectionMonths must be between 1 and 12');

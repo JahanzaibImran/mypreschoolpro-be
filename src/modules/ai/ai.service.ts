@@ -41,7 +41,7 @@ export class AiService {
     @InjectRepository(ProfileEntity)
     private readonly profileRepository: Repository<ProfileEntity>,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   /**
    * Call OpenAI API with structured prompt
@@ -53,9 +53,9 @@ export class AiService {
     temperature: number = 0.4,
     maxTokens: number = 3000,
   ): Promise<any> {
-    const openAIApiKey = this.configService.get<string>('openai.apiKey') || 
-                        this.configService.get<string>('OPENAI_API_KEY');
-    
+    const openAIApiKey = this.configService.get<string>('openai.apiKey') ||
+      this.configService.get<string>('OPENAI_API_KEY');
+
     if (!openAIApiKey) {
       throw new BadRequestException('OpenAI API key not configured');
     }
@@ -155,7 +155,7 @@ export class AiService {
     };
 
     const systemPrompt = 'You are a financial auditor specializing in billing error detection. Analyze payment data and provide detailed findings in valid JSON format only.';
-    
+
     const userPrompt = `Analyze the following payment and transaction data to identify issues.
 
 Data Summary:
@@ -242,7 +242,7 @@ Return JSON with structure:
     const interestedCount = interestedLeads.length;
 
     const systemPrompt = 'You are an education enrollment analyst. Analyze class and enrollment data and provide actionable insights. Always respond with valid JSON only.';
-    
+
     const userPrompt = `Analyze the following class and enrollment data:
 
 Class Data:
@@ -316,21 +316,21 @@ Return JSON with structure:
     );
 
     const systemPrompt = 'You are a lead qualification expert. Analyze lead data to determine priority and conversion likelihood. Always respond with valid JSON only.';
-    
+
     const userPrompt = `Analyze this lead for priority scoring:
 
 Lead Data:
 ${JSON.stringify({
-  id: lead.id,
-  childName: lead.childName,
-  parentName: lead.parentName,
-  program: lead.program,
-  leadStatus: lead.leadStatus,
-  leadScore: lead.leadScore,
-  leadSource: lead.leadSource,
-  daysSinceInquiry,
-  lastActivityAt: lead.lastActivityAt,
-}, null, 2)}
+      id: lead.id,
+      childName: lead.childName,
+      parentName: lead.parentName,
+      program: lead.program,
+      leadStatus: lead.leadStatus,
+      leadScore: lead.leadScore,
+      leadSource: lead.leadSource,
+      daysSinceInquiry,
+      lastActivityAt: lead.lastActivityAt,
+    }, null, 2)}
 
 Historical Conversion Data:
 - Total Conversions: ${conversions.length}
@@ -386,24 +386,24 @@ Return JSON:
     });
 
     const systemPrompt = 'You are a financial risk analyst specializing in payment prediction. Analyze payment patterns to predict future payment risks. Always respond with valid JSON only.';
-    
+
     const userPrompt = `Analyze payment data to predict payment risks:
 
 Payment History:
 ${JSON.stringify(payments.slice(0, 50).map(p => ({
-  amount: p.amount,
-  paymentStatus: p.paymentStatus,
-  paymentType: p.paymentType,
-  createdAt: p.createdAt,
-})), null, 2)}
+      amount: p.amount,
+      paymentStatus: p.paymentStatus,
+      paymentType: p.paymentType,
+      createdAt: p.createdAt,
+    })), null, 2)}
 
 Transaction History:
 ${JSON.stringify(transactions.slice(0, 50).map(t => ({
-  amount: t.amount / 100,
-  status: t.status,
-  paymentType: t.paymentType,
-  createdAt: t.createdAt,
-})), null, 2)}
+      amount: t.amount / 100,
+      status: t.status,
+      paymentType: t.paymentType,
+      createdAt: t.createdAt,
+    })), null, 2)}
 
 Active Enrollments: ${enrollments.length}
 
@@ -454,22 +454,22 @@ Return JSON:
     });
 
     const systemPrompt = 'You are a revenue forecasting expert. Analyze enrollment and transaction data to predict future revenue. Always respond with valid JSON only.';
-    
+
     const userPrompt = `Predict revenue for the next ${projectionMonths} months:
 
 Current Enrollments: ${enrollments.length}
 Monthly Tuition Data:
 ${JSON.stringify(enrollments.slice(0, 20).map(e => ({
-  tuitionAmount: e.tuitionAmount,
-  program: e.program,
-  startDate: e.startDate,
-})), null, 2)}
+      tuitionAmount: e.tuitionAmount,
+      program: e.program,
+      startDate: e.startDate,
+    })), null, 2)}
 
 Historical Transactions:
 ${JSON.stringify(transactions.slice(0, 30).map(t => ({
-  amount: t.amount / 100,
-  createdAt: t.createdAt,
-})), null, 2)}
+      amount: t.amount / 100,
+      createdAt: t.createdAt,
+    })), null, 2)}
 
 Provide:
 1. Monthly revenue projections
@@ -519,7 +519,7 @@ Return JSON:
     });
 
     const systemPrompt = 'You are an enrollment forecasting expert. Analyze enrollment trends and predict future enrollment patterns. Always respond with valid JSON only.';
-    
+
     const userPrompt = `Forecast enrollment trends for the next ${timeframeMonths} months:
 
 Historical Enrollments: ${enrollments.length}
@@ -528,10 +528,10 @@ Classes: ${classes.length}
 
 Enrollment History:
 ${JSON.stringify(enrollments.slice(0, 50).map(e => ({
-  program: e.program,
-  startDate: e.startDate,
-  status: e.status,
-})), null, 2)}
+      program: e.program,
+      startDate: e.startDate,
+      status: e.status,
+    })), null, 2)}
 
 Provide:
 1. Monthly enrollment projections
@@ -583,17 +583,17 @@ Return JSON:
     });
 
     const systemPrompt = 'You are an expert in predicting class capacity and openings. Analyze enrollment patterns to predict when classes will have openings. Always respond with valid JSON only.';
-    
+
     const userPrompt = `Predict class openings for the next ${timeframeMonths} months:
 
 Classes:
 ${JSON.stringify(classes.map(c => ({
-  id: c.id,
-  name: c.name,
-  program: c.program,
-  capacity: c.capacity,
-  currentEnrollment: c.currentEnrollment,
-})), null, 2)}
+      id: c.id,
+      name: c.name,
+      program: c.program,
+      capacity: c.capacity,
+      currentEnrollment: c.currentEnrollment,
+    })), null, 2)}
 
 Active Enrollments: ${enrollments.length}
 Historical Withdrawals: ${historicalWithdrawals.length}
@@ -640,18 +640,18 @@ Return JSON:
     // For now, using lead data
 
     const systemPrompt = 'You are a tour analysis expert. Analyze tour data and lead interactions to provide insights. Always respond with valid JSON only.';
-    
+
     const userPrompt = `Analyze tour insights for this lead:
 
 Lead Data:
 ${JSON.stringify({
-  childName: lead.childName,
-  parentName: lead.parentName,
-  program: lead.program,
-  leadStatus: lead.leadStatus,
-  notes: lead.notes,
-  createdAt: lead.createdAt,
-}, null, 2)}
+      childName: lead.childName,
+      parentName: lead.parentName,
+      program: lead.program,
+      leadStatus: lead.leadStatus,
+      notes: lead.notes,
+      createdAt: lead.createdAt,
+    }, null, 2)}
 
 Provide:
 1. Tour effectiveness analysis
@@ -693,18 +693,18 @@ Return JSON:
     });
 
     const systemPrompt = 'You are an expert in early childhood education ratios and compliance. Analyze class ratios and capacity. Always respond with valid JSON only.';
-    
+
     const userPrompt = `Analyze class ratios:
 
 Classes:
 ${JSON.stringify(classes.map(c => ({
-  name: c.name,
-  program: c.program,
-  ageGroup: c.ageGroup,
-  capacity: c.capacity,
-  currentEnrollment: c.currentEnrollment,
-  ratio: (c.currentEnrollment || 0) / (c.capacity || 1),
-})), null, 2)}
+      name: c.name,
+      program: c.program,
+      ageGroup: c.ageGroup,
+      capacity: c.capacity,
+      currentEnrollment: c.currentEnrollment,
+      ratio: (c.currentEnrollment || 0) / (c.capacity || 1),
+    })), null, 2)}
 
 Provide:
 1. Ratio compliance status
@@ -749,7 +749,7 @@ Return JSON:
     });
 
     const systemPrompt = 'You are a multi-school analytics expert. Compare and analyze KPIs across multiple schools. Always respond with valid JSON only.';
-    
+
     const userPrompt = `Analyze KPIs across multiple schools:
 
 Schools: ${schools.length}
@@ -758,11 +758,11 @@ Total Revenue: ${transactions.reduce((sum, t) => sum + t.amount / 100, 0)}
 
 School Breakdown:
 ${JSON.stringify(schools.map(s => ({
-  id: s.id,
-  name: s.name,
-  enrollments: enrollments.filter(e => e.schoolId === s.id).length,
-  revenue: transactions.filter(t => t.schoolId === s.id).reduce((sum, t) => sum + t.amount / 100, 0),
-})), null, 2)}
+      id: s.id,
+      name: s.name,
+      enrollments: enrollments.filter(e => e.schoolId === s.id).length,
+      revenue: transactions.filter(t => t.schoolId === s.id).reduce((sum, t) => sum + t.amount / 100, 0),
+    })), null, 2)}
 
 Provide:
 1. Comparative analysis
@@ -803,19 +803,19 @@ Return JSON:
     }
 
     const systemPrompt = 'You are a lead management expert. Analyze lead data and recommend the best next steps. Always respond with valid JSON only.';
-    
+
     const userPrompt = `Recommend next steps for this lead:
 
 Lead Data:
 ${JSON.stringify({
-  childName: lead.childName,
-  parentName: lead.parentName,
-  program: lead.program,
-  leadStatus: lead.leadStatus,
-  leadScore: lead.leadScore,
-  notes: lead.notes,
-  createdAt: lead.createdAt,
-}, null, 2)}
+      childName: lead.childName,
+      parentName: lead.parentName,
+      program: lead.program,
+      leadStatus: lead.leadStatus,
+      leadScore: lead.leadScore,
+      notes: lead.notes,
+      createdAt: lead.createdAt,
+    }, null, 2)}
 
 Provide:
 1. Immediate next steps
@@ -861,25 +861,25 @@ Return JSON:
     });
 
     const systemPrompt = 'You are a program placement expert. Recommend the best program assignment for a child based on their age, needs, and available programs. Always respond with valid JSON only.';
-    
+
     const userPrompt = `Recommend program assignment:
 
 Child Data:
 ${JSON.stringify({
-  childName: lead.childName,
-  childBirthdate: lead.childBirthdate,
-  program: lead.program,
-  notes: lead.notes,
-}, null, 2)}
+      childName: lead.childName,
+      childBirthdate: lead.childBirthdate,
+      program: lead.program,
+      notes: lead.notes,
+    }, null, 2)}
 
 Available Classes:
 ${JSON.stringify(classes.map(c => ({
-  name: c.name,
-  program: c.program,
-  ageGroup: c.ageGroup,
-  capacity: c.capacity,
-  currentEnrollment: c.currentEnrollment,
-})), null, 2)}
+      name: c.name,
+      program: c.program,
+      ageGroup: c.ageGroup,
+      capacity: c.capacity,
+      currentEnrollment: c.currentEnrollment,
+    })), null, 2)}
 
 Provide:
 1. Recommended program
@@ -912,7 +912,7 @@ Return JSON:
     this.logger.log('Recommending learning path');
 
     const systemPrompt = 'You are an expert early childhood education specialist. Create personalized learning recommendations. Always respond with valid JSON only.';
-    
+
     const userPrompt = `Create personalized learning path:
 
 Student Data:
@@ -970,17 +970,17 @@ Return JSON:
     });
 
     const systemPrompt = 'You are a facility planning expert. Analyze capacity and demand to recommend classroom expansion. Always respond with valid JSON only.';
-    
+
     const userPrompt = `Recommend classroom expansion:
 
 Current Classes:
 ${JSON.stringify(classes.map(c => ({
-  name: c.name,
-  program: c.program,
-  capacity: c.capacity,
-  currentEnrollment: c.currentEnrollment,
-  utilization: ((c.currentEnrollment || 0) / (c.capacity || 1)) * 100,
-})), null, 2)}
+      name: c.name,
+      program: c.program,
+      capacity: c.capacity,
+      currentEnrollment: c.currentEnrollment,
+      utilization: ((c.currentEnrollment || 0) / (c.capacity || 1)) * 100,
+    })), null, 2)}
 
 Active Enrollments: ${enrollments.length}
 Waitlist: ${waitlist.length}
@@ -1034,15 +1034,15 @@ Return JSON:
     });
 
     const systemPrompt = 'You are a business development expert. Analyze school data to recommend expansion opportunities. Always respond with valid JSON only.';
-    
+
     const userPrompt = `Recommend expansion opportunities:
 
 School Data:
 ${JSON.stringify({
-  name: school.name,
-  address: school.address,
-  programsOffered: school.programsOffered,
-}, null, 2)}
+      name: school.name,
+      address: school.address,
+      programsOffered: school.programsOffered,
+    }, null, 2)}
 
 Current Enrollments: ${enrollments.length}
 Recent Leads: ${leads.length}
@@ -1087,21 +1087,21 @@ Return JSON:
     }
 
     const systemPrompt = 'You are a family engagement specialist. Generate comprehensive family profiles. Always respond with valid JSON only.';
-    
+
     const userPrompt = `Generate family profile:
 
 Lead Data:
 ${JSON.stringify({
-  childName: lead.childName,
-  childBirthdate: lead.childBirthdate,
-  parentName: lead.parentName,
-  parentEmail: lead.parentEmail,
-  parentPhone: lead.parentPhone,
-  program: lead.program,
-  notes: lead.notes,
-  leadSource: lead.leadSource,
-  leadStatus: lead.leadStatus,
-}, null, 2)}
+      childName: lead.childName,
+      childBirthdate: lead.childBirthdate,
+      parentName: lead.parentName,
+      parentEmail: lead.parentEmail,
+      parentPhone: lead.parentPhone,
+      program: lead.program,
+      notes: lead.notes,
+      leadSource: lead.leadSource,
+      leadStatus: lead.leadStatus,
+    }, null, 2)}
 
 Provide:
 1. Family overview
@@ -1137,7 +1137,7 @@ Return JSON:
     this.logger.log(`Generating response suggestions for ${messageType}`);
 
     const systemPrompt = 'You are a communication expert. Generate professional, personalized response suggestions. Always respond with valid JSON only.';
-    
+
     const userPrompt = `Generate response suggestions:
 
 Context:
@@ -1184,7 +1184,7 @@ Return JSON:
 - General preschool questions
 
 Always be helpful, professional, and empathetic. If you don't know something, suggest contacting the school directly. Always respond with valid JSON only.`;
-    
+
     const userPrompt = `Answer the parent's question:
 
 School Context:
@@ -1223,7 +1223,7 @@ Return JSON:
     this.logger.log('Analyzing developmental milestones');
 
     const systemPrompt = 'You are an expert early childhood development specialist. Analyze student progress against developmental milestones. Always respond with valid JSON only.';
-    
+
     const userPrompt = `Analyze developmental milestones:
 
 Student Data:
@@ -1266,7 +1266,7 @@ Return JSON:
     this.logger.log('Recommending meeting times');
 
     const systemPrompt = 'You are a scheduling expert. Recommend optimal meeting times based on participant availability. Always respond with valid JSON only.';
-    
+
     const userPrompt = `Recommend meeting times:
 
 Participants:
@@ -1573,6 +1573,34 @@ Return JSON:
       "staffCount": number,
       "severity": "critical" | "high" | "medium",
       "recommendation": string
+    }
+  ],
+  "ptoImpact": [
+    {
+      "staffName": string,
+      "ptoDate": string,
+      "ptoDuration": string,
+      "affectedClasses": string[],
+      "coverageSuggestions": string[],
+      "impact": "critical" | "high" | "medium" | "low"
+    }
+  ],
+  "schedulingConflicts": [
+    {
+      "staffName": string,
+      "date": string,
+      "conflictType": string,
+      "details": string,
+      "resolution": string
+    }
+  ],
+  "substituteNeeds": [
+    {
+      "date": string,
+      "duration": string,
+      "className": string,
+      "reason": string,
+      "qualifications": string[]
     }
   ],
   "optimizationSuggestions": [

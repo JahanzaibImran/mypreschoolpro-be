@@ -2,6 +2,7 @@ import { Injectable, Logger, BadRequestException, NotFoundException, ForbiddenEx
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { StudentDocument, DocumentCategory, DocumentStatus } from './entities/student-document.entity';
+import { Student } from './entities/student.entity';
 import { StudentAttendance, AttendanceStatus } from './entities/student-attendance.entity';
 import { StudentProgress, ProgressStatus } from './entities/student-progress.entity';
 import { LeadEntity } from '../leads/entities/lead.entity';
@@ -46,6 +47,8 @@ export class StudentsService {
     constructor(
         @InjectRepository(StudentDocument)
         private readonly studentDocumentRepository: Repository<StudentDocument>,
+        @InjectRepository(Student)
+        private readonly studentRepository: Repository<Student>,
         @InjectRepository(StudentAttendance)
         private readonly studentAttendanceRepository: Repository<StudentAttendance>,
         @InjectRepository(StudentProgress)
@@ -105,6 +108,36 @@ export class StudentsService {
         });
 
         return result;
+    }
+
+    /**
+     * Get all students for the current user's school
+     */
+    async getAllStudents(user: AuthUser): Promise<Student[]> {
+        const userRoles = user.roles?.map((r) => r.role) || [];
+        const isSuperAdmin = userRoles.includes(AppRole.SUPER_ADMIN);
+
+        if (isSuperAdmin) {
+            // For now, return all students or maybe throw? 
+            // Super admin usually acts within a school context in this app
+            // Let's return all for now or check if they have a school attached
+        }
+
+        const userRole = await this.userRoleRepository.findOne({
+            where: { userId: user.id },
+            select: ['schoolId'],
+        });
+
+        if (!userRole?.schoolId) {
+            // If super admin and no school, maybe return empty?
+            if (isSuperAdmin) return [];
+            throw new ForbiddenException('User is not associated with any school');
+        }
+
+        return this.studentRepository.find({
+            where: { schoolId: userRole.schoolId },
+            order: { lastName: 'ASC', firstName: 'ASC' },
+        });
     }
 
     /**
@@ -258,7 +291,7 @@ export class StudentsService {
         if (user && user.primaryRole !== AppRole.SUPER_ADMIN) {
             const userRoles = user.roles?.map((r) => r.role) || [];
             const isAdminOrAdmissions = userRoles.includes(AppRole.SCHOOL_ADMIN) || userRoles.includes(AppRole.ADMISSIONS_STAFF);
-            
+
             if (isAdminOrAdmissions) {
                 const userRole = await this.userRoleRepository.findOne({
                     where: { userId: user.id },
@@ -299,7 +332,7 @@ export class StudentsService {
         if (user && user.primaryRole !== AppRole.SUPER_ADMIN) {
             const userRoles = user.roles?.map((r) => r.role) || [];
             const isAdminOrAdmissions = userRoles.includes(AppRole.SCHOOL_ADMIN) || userRoles.includes(AppRole.ADMISSIONS_STAFF);
-            
+
             if (isAdminOrAdmissions) {
                 const userRole = await this.userRoleRepository.findOne({
                     where: { userId: user.id },

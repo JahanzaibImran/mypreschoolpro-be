@@ -37,7 +37,7 @@ export class WaitlistService {
     private readonly enrollmentRepository: Repository<EnrollmentEntity>,
     @InjectRepository(SchoolEntity)
     private readonly schoolRepository: Repository<SchoolEntity>,
-  ) {}
+  ) { }
 
   async getWaitlist(user: AuthUser, query: WaitlistQueryDto): Promise<WaitlistResponseDto> {
     const page = query.page ? Number(query.page) : 1;
@@ -238,14 +238,69 @@ export class WaitlistService {
     waitlistId: string,
     payload: UpdateWaitlistPositionDto,
   ): Promise<void> {
-    const waitlistEntry = await this.waitlistRepository.findOne({ where: { id: waitlistId } });
+    const waitlistEntry = await this.waitlistRepository.findOne({
+      where: { id: waitlistId },
+      select: ['id', 'waitlistPosition', 'schoolId', 'program'],
+    });
 
     if (!waitlistEntry) {
       throw new NotFoundException('Waitlist entry not found');
     }
 
-    waitlistEntry.waitlistPosition = payload.position;
-    await this.waitlistRepository.save(waitlistEntry);
+    const oldPosition = waitlistEntry.waitlistPosition;
+    const newPosition = payload.position;
+
+    if (oldPosition === newPosition) {
+      return;
+    }
+
+    await this.waitlistRepository.manager.transaction(async (transactionalEntityManager) => {
+      if (newPosition < oldPosition) {
+        // Moving UP: increment positions of entries between newPosition and oldPosition-1
+        await transactionalEntityManager
+          .createQueryBuilder()
+          .update(Waitlist)
+          .set({ waitlistPosition: () => 'waitlist_position + 1' })
+          .where('school_id = :schoolId', { schoolId: waitlistEntry.schoolId })
+          .andWhere('program = :program', { program: waitlistEntry.program })
+          .andWhere('waitlist_position >= :newPosition', { newPosition })
+          .andWhere('waitlist_position < :oldPosition', { oldPosition })
+          .execute();
+      } else {
+        // Moving DOWN: decrement positions of entries between oldPosition+1 and newPosition
+        await transactionalEntityManager
+          .createQueryBuilder()
+          .update(Waitlist)
+          .set({ waitlistPosition: () => 'waitlist_position - 1' })
+          .where('school_id = :schoolId', { schoolId: waitlistEntry.schoolId })
+          .andWhere('program = :program', { program: waitlistEntry.program })
+          .andWhere('waitlist_position > :oldPosition', { oldPosition })
+          .andWhere('waitlist_position <= :newPosition', { newPosition })
+          .execute();
+      }
+
+      // Finally update the entry's position
+      await transactionalEntityManager.update(Waitlist, waitlistId, {
+        waitlistPosition: newPosition,
+      });
+
+      // Normalize positions to ensure no gaps
+      const allEntries = await transactionalEntityManager
+        .createQueryBuilder(Waitlist, 'waitlist')
+        .where('school_id = :schoolId', { schoolId: waitlistEntry.schoolId })
+        .andWhere('program = :program', { program: waitlistEntry.program })
+        .orderBy('waitlist.waitlist_position', 'ASC')
+        .addOrderBy('waitlist.created_at', 'ASC')
+        .getMany();
+
+      for (let i = 0; i < allEntries.length; i++) {
+        if (allEntries[i].waitlistPosition !== (i + 1)) {
+          await transactionalEntityManager.update(Waitlist, allEntries[i].id, {
+            waitlistPosition: i + 1,
+          });
+        }
+      }
+    });
   }
 
   async updateEntry(
@@ -293,7 +348,7 @@ export class WaitlistService {
 
     // Get all accessible school IDs for the user
     const accessibleSchoolIds = new Set<string>();
-    
+
     // For school owners, query all schools they own
     if (user.primaryRole === AppRole.SCHOOL_OWNER) {
       const ownedSchools = await this.schoolRepository.find({

@@ -71,7 +71,7 @@ export class UsersController {
     private readonly schoolRepository: Repository<SchoolEntity>,
     @InjectRepository(ImpersonationSession)
     private readonly impersonationRepository: Repository<ImpersonationSession>,
-  ) {}
+  ) { }
 
   private async ensureUserCanManageSchool(user: AuthUser, schoolId?: string): Promise<void> {
     if (!schoolId) {
@@ -100,12 +100,12 @@ export class UsersController {
         where: { id: schoolId, ownerId: user.id },
         select: ['id'],
       });
-      
+
       if (requestedSchool) {
         // User owns the requested school, allow access
         return;
       }
-      
+
       // Also get all schools they own for other checks
       const ownedSchools = await this.schoolRepository.find({
         where: { ownerId: user.id },
@@ -214,7 +214,7 @@ export class UsersController {
     }
 
     const userIdArray = userIds.split(',').map((id) => id.trim()).filter(Boolean);
-    
+
     if (userIdArray.length === 0) {
       throw new BadRequestException('At least one user ID is required');
     }
@@ -271,7 +271,7 @@ export class UsersController {
     }
 
     const userIdArray = userIds.split(',').map((id) => id.trim()).filter(Boolean);
-    
+
     if (userIdArray.length === 0) {
       throw new BadRequestException('At least one user ID is required');
     }
@@ -331,7 +331,7 @@ export class UsersController {
   })
   async getMySchool(@CurrentUser() user: AuthUser): Promise<SchoolEntity> {
     const school = await this.usersService.findSchoolByUser(user.id, user.primaryRole);
-    
+
     if (!school) {
       throw new NotFoundException('No school found for this user');
     }
@@ -449,12 +449,12 @@ export class UsersController {
       lastName: updateDto.last_name ?? profile.lastName,
       email: updateDto.email ?? profile.email,
       phone: updateDto.phone ?? profile.phone,
-      address: updateDto.address !== undefined ? updateDto.address : profile.address,
-      city: updateDto.city !== undefined ? updateDto.city : profile.city,
-      state: updateDto.state !== undefined ? updateDto.state : profile.state,
-      zipCode: updateDto.zip_code !== undefined ? updateDto.zip_code : profile.zipCode,
-      avatarUrl: updateDto.avatar_url !== undefined ? updateDto.avatar_url : profile.avatarUrl,
-      bio: updateDto.bio !== undefined ? updateDto.bio : profile.bio,
+      address: updateDto.address ?? profile.address,
+      city: updateDto.city ?? profile.city,
+      state: updateDto.state ?? profile.state,
+      zipCode: updateDto.zip_code ?? profile.zipCode,
+      avatarUrl: updateDto.avatar_url ?? profile.avatarUrl,
+      bio: updateDto.bio ?? profile.bio,
     });
 
     return {
@@ -695,9 +695,9 @@ export class UsersController {
 
     const roles = rolesQuery
       ? (rolesQuery
-          .split(',')
-          .map((role) => role.trim())
-          .filter(Boolean) as AppRole[])
+        .split(',')
+        .map((role) => role.trim())
+        .filter(Boolean) as AppRole[])
       : [AppRole.ADMISSIONS_STAFF];
 
     const staff = await this.usersService.findStaffBySchool(schoolId, roles);
@@ -709,12 +709,12 @@ export class UsersController {
       created_at: assignment.createdAt?.toISOString?.() ?? '',
       profile: assignment.profile
         ? {
-            first_name: assignment.profile.firstName,
-            last_name: assignment.profile.lastName,
-            email: assignment.profile.email,
-            phone: assignment.profile.phone,
-            status: assignment.profile.status,
-          }
+          first_name: assignment.profile.firstName,
+          last_name: assignment.profile.lastName,
+          email: assignment.profile.email,
+          phone: assignment.profile.phone,
+          status: assignment.profile.status,
+        }
         : null,
     }));
   }
@@ -797,7 +797,7 @@ export class UsersController {
 
     // Get inviter's name for the email
     const inviterProfile = await this.usersService.findProfileById(user.id);
-    const inviterName = inviterProfile 
+    const inviterName = inviterProfile
       ? `${inviterProfile.firstName || ''} ${inviterProfile.lastName || ''}`.trim() || 'School Administrator'
       : 'School Administrator';
 
@@ -1027,7 +1027,7 @@ export class UsersController {
 
   @Get(':id/roles')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(AppRole.SUPER_ADMIN,AppRole.SCHOOL_ADMIN)
+  @Roles(AppRole.SUPER_ADMIN, AppRole.SCHOOL_ADMIN)
   @ApiOperation({
     summary: 'Get user roles',
     description: 'Get all roles for a user (super admin only).',

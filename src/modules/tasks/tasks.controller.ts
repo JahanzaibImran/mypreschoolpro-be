@@ -46,7 +46,7 @@ export class TasksController {
     private readonly tasksService: TasksService,
     @InjectRepository(ProfileEntity)
     private readonly profileRepository: Repository<ProfileEntity>,
-  ) {}
+  ) { }
 
   @Post()
   @Roles(AppRole.SUPER_ADMIN, AppRole.SCHOOL_ADMIN, AppRole.ADMISSIONS_STAFF, AppRole.SCHOOL_OWNER)
@@ -78,7 +78,24 @@ export class TasksController {
     }
 
     const task = await this.tasksService.create(createTaskDto, user.id);
-    return this.mapToResponseDto(task);
+
+    // Fetch assignee profile if assigned
+    let assigneeMap = new Map<string, { firstName: string | null; lastName: string | null; email: string }>();
+    if (task.assignedTo) {
+      const profile = await this.profileRepository.findOne({
+        where: { id: task.assignedTo },
+        select: ['id', 'firstName', 'lastName', 'email'],
+      });
+      if (profile) {
+        assigneeMap.set(profile.id, {
+          firstName: profile.firstName,
+          lastName: profile.lastName,
+          email: profile.email,
+        });
+      }
+    }
+
+    return this.mapToResponseDto(task, assigneeMap);
   }
 
   @Get()
@@ -116,7 +133,7 @@ export class TasksController {
     // Fetch assignee profiles for tasks
     const assigneeIds = [...new Set(tasks.map(t => t.assignedTo).filter(Boolean) as string[])];
     const assigneeMap = new Map<string, { firstName: string | null; lastName: string | null; email: string }>();
-    
+
     if (assigneeIds.length > 0) {
       const profiles = await this.profileRepository.find({
         where: assigneeIds.map(id => ({ id })),
@@ -149,7 +166,7 @@ export class TasksController {
     @CurrentUser() user: AuthUser,
   ): Promise<TaskResponseDto> {
     const task = await this.tasksService.findOne(id, user);
-    
+
     // Fetch assignee profile if assigned
     let assigneeMap = new Map<string, { firstName: string | null; lastName: string | null; email: string }>();
     if (task.assignedTo) {
@@ -165,7 +182,7 @@ export class TasksController {
         });
       }
     }
-    
+
     return this.mapToResponseDto(task, assigneeMap);
   }
 
@@ -185,7 +202,7 @@ export class TasksController {
     @CurrentUser() user: AuthUser,
   ): Promise<TaskResponseDto> {
     const task = await this.tasksService.update(id, updateTaskDto, user);
-    
+
     // Fetch assignee profile if assigned
     let assigneeMap = new Map<string, { firstName: string | null; lastName: string | null; email: string }>();
     if (task.assignedTo) {
@@ -201,7 +218,7 @@ export class TasksController {
         });
       }
     }
-    
+
     return this.mapToResponseDto(task, assigneeMap);
   }
 
@@ -231,10 +248,10 @@ export class TasksController {
   ): TaskResponseDto {
     const assignee = task.assignedTo && assigneeMap?.get(task.assignedTo)
       ? {
-          firstName: assigneeMap.get(task.assignedTo)!.firstName,
-          lastName: assigneeMap.get(task.assignedTo)!.lastName,
-          email: assigneeMap.get(task.assignedTo)!.email,
-        }
+        firstName: assigneeMap.get(task.assignedTo)!.firstName,
+        lastName: assigneeMap.get(task.assignedTo)!.lastName,
+        email: assigneeMap.get(task.assignedTo)!.email,
+      }
       : null;
 
     return {

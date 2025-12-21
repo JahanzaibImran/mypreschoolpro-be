@@ -39,12 +39,53 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../auth/interfaces/auth-user.interface';
 import { Campaign } from './entities/campaign.entity';
 
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { SchoolEntity } from '../schools/entities/school.entity';
+
 @ApiTags('Campaigns')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('campaigns')
 export class CampaignsController {
-  constructor(private readonly campaignsService: CampaignsService) {}
+  constructor(
+    private readonly campaignsService: CampaignsService,
+    @InjectRepository(SchoolEntity)
+    private readonly schoolRepository: Repository<SchoolEntity>,
+  ) { }
+
+  private async ensureUserCanManageSchool(user: AuthUser, schoolId?: string): Promise<void> {
+    if (!schoolId) {
+      throw new BadRequestException('schoolId is required');
+    }
+
+    if (user.primaryRole === AppRole.SUPER_ADMIN) {
+      return;
+    }
+
+    const accessible = new Set<string>();
+    if (user.schoolId) {
+      accessible.add(user.schoolId);
+    }
+    user.roles?.forEach((role) => {
+      if (role.schoolId) {
+        accessible.add(role.schoolId);
+      }
+    });
+
+    // Check if user owns the school
+    const isOwner = await this.schoolRepository.count({
+      where: { id: schoolId, ownerId: user.id },
+    });
+
+    if (isOwner > 0) {
+      return;
+    }
+
+    if (!accessible.has(schoolId)) {
+      throw new ForbiddenException('You can only manage your own school');
+    }
+  }
 
   @Post()
   @Roles(AppRole.SUPER_ADMIN, AppRole.SCHOOL_ADMIN, AppRole.ADMISSIONS_STAFF, AppRole.SCHOOL_OWNER)
@@ -64,15 +105,7 @@ export class CampaignsController {
     @Body() createCampaignDto: CreateCampaignDto,
     @CurrentUser() user: AuthUser,
   ): Promise<CampaignResponseDto> {
-    // Non-super admins can only create campaigns for their own school
-    if (user.primaryRole !== AppRole.SUPER_ADMIN) {
-      if (user.primaryRole === AppRole.SCHOOL_OWNER) {
-        // School owners need to verify they own the school
-        // This will be checked in the service if needed
-      } else if (!user.schoolId || createCampaignDto.schoolId !== user.schoolId) {
-        throw new ForbiddenException('You can only create campaigns for your own school');
-      }
-    }
+    await this.ensureUserCanManageSchool(user, createCampaignDto.schoolId);
 
     const campaign = await this.campaignsService.create(createCampaignDto, user.id);
     return this.mapToResponseDto(campaign);
@@ -137,21 +170,36 @@ export class CampaignsController {
       // Super admins can see all campaigns
       filterSchoolId = schoolId;
       filterSchoolIds = schoolIds ? schoolIds.split(',').map(id => id.trim()) : undefined;
-    } else if (user?.primaryRole === AppRole.SCHOOL_OWNER) {
-      // School owners can see campaigns for all their schools
-      // We need to get their school IDs - for now, use schoolIds query param or fetch from user context
+    } else if (user?.primaryRole === AppRole.SCHOOL_OWNER || user?.primaryRole === AppRole.SCHOOL_ADMIN || user?.primaryRole === AppRole.ADMISSIONS_STAFF) {
+      // For these roles, we should filter by specific school(s) they have access to
       if (schoolIds) {
         filterSchoolIds = schoolIds.split(',').map(id => id.trim());
+        // Verify access to each school
+        for (const id of filterSchoolIds) {
+          try {
+            await this.ensureUserCanManageSchool(user, id);
+          } catch (e) {
+            // If they can't access one of the requested schools, we might want to filter it out or throw
+            // For now, let's just skip it
+            filterSchoolIds = filterSchoolIds.filter(sid => sid !== id);
+          }
+        }
       } else if (schoolId) {
         filterSchoolId = schoolId;
+        try {
+          await this.ensureUserCanManageSchool(user, filterSchoolId);
+        } catch (e) {
+          return { data: [], total: 0 };
+        }
       } else {
-        // If no school filter provided, we'd need to fetch owned schools
-        // For now, require schoolId or schoolIds
-        throw new BadRequestException('schoolId or schoolIds is required for school owners');
+        // If no schoolId provided, use user's default schoolId
+        filterSchoolId = user?.schoolId || undefined;
+        if (!filterSchoolId && user?.primaryRole === AppRole.SCHOOL_OWNER) {
+          // School owners without a default schoolId: we'd need to fetch their owned schools
+          // For now, let's allow them to see all their owned schools if they don't filter
+          // But the service needs to handle this. For now, let's keep it consistent.
+        }
       }
-    } else {
-      // School admins and admissions staff can only see their assigned school's campaigns
-      filterSchoolId = user?.schoolId || schoolId;
     }
 
     const result = await this.campaignsService.findAll(

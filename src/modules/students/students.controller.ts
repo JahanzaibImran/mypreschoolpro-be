@@ -42,6 +42,16 @@ import { ProgressResponseDto } from './dto/progress-response.dto';
 export class StudentsController {
     constructor(private readonly studentsService: StudentsService) { }
 
+    @Get()
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(AppRole.SUPER_ADMIN, AppRole.SCHOOL_ADMIN, AppRole.ADMISSIONS_STAFF, AppRole.TEACHER)
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Get all students for the current user\'s school' })
+    @ApiResponse({ status: 200, description: 'List of students' })
+    async getAllStudents(@CurrentUser() user: AuthUser) {
+        return this.studentsService.getAllStudents(user);
+    }
+
     @Get('documents/parent')
     @UseGuards(JwtAuthGuard)
     @ApiBearerAuth()

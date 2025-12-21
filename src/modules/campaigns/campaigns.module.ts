@@ -14,6 +14,8 @@ import { CampaignScheduleConfig } from './entities/campaign-schedule-config.enti
 import { CampaignsController } from './campaigns.controller';
 import { CampaignsService } from './campaigns.service';
 
+import { SchoolEntity } from '../schools/entities/school.entity';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -28,10 +30,11 @@ import { CampaignsService } from './campaigns.service';
       CampaignResult,
       CampaignSegment,
       CampaignScheduleConfig,
+      SchoolEntity,
     ]),
   ],
   controllers: [CampaignsController],
   providers: [CampaignsService],
   exports: [CampaignsService],
 })
-export class CampaignsModule {}
+export class CampaignsModule { }

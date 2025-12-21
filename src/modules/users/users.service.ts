@@ -1,4 +1,4 @@
- import { Injectable, Logger, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, MoreThan, Repository } from 'typeorm';
 import { ProfileEntity } from './entities/profile.entity';
@@ -9,6 +9,7 @@ import { SchoolEntity } from '../schools/entities/school.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ConfigService } from '@nestjs/config';
 import { createClient } from '@supabase/supabase-js';
+import { MailerService } from '../mailer/mailer.service';
 
 interface ProfileQueryOptions {
   status?: string;
@@ -34,7 +35,8 @@ export class UsersService {
     @InjectRepository(SchoolEntity)
     private readonly schoolRepository: Repository<SchoolEntity>,
     private readonly configService: ConfigService,
-  ) {}
+    private readonly mailerService: MailerService,
+  ) { }
 
   async findProfileById(userId: string): Promise<ProfileEntity | null> {
     return this.profileRepository.findOne({ where: { id: userId } });
@@ -82,9 +84,22 @@ export class UsersService {
     return ownedSchool || null;
   }
 
-  async upsertProfile(profile: Partial<ProfileEntity>): Promise<ProfileEntity> {
+  async upsertProfile(profileData: Partial<ProfileEntity>): Promise<ProfileEntity> {
+    if (profileData.id) {
+      // Check if it exists first to do a proper update
+      const existing = await this.profileRepository.findOne({ where: { id: profileData.id } });
+      if (existing) {
+        // Merge updates into existing entity
+        const updated = this.profileRepository.merge(existing, profileData);
+        // Explicitly update updatedAt
+        updated.updatedAt = new Date();
+        return this.profileRepository.save(updated);
+      }
+    }
+
+    // Create new if not exists (or no ID provided, though ID should be there for updates)
     return this.profileRepository.save(
-      this.profileRepository.create(profile),
+      this.profileRepository.create(profileData),
     );
   }
 
@@ -273,7 +288,7 @@ export class UsersService {
     // Get current login count
     const profile = await this.profileRepository.findOne({ where: { id: userId } });
     const currentLoginCount = profile?.loginCount || 0;
-    
+
     // Update profile's updated_at and increment login count
     await this.profileRepository.update(userId, {
       updatedAt: new Date(),
@@ -667,9 +682,9 @@ export class UsersService {
     const schools =
       schoolIds.length > 0
         ? await this.schoolRepository.find({
-            where: { id: In(schoolIds) },
-            select: ['id', 'name'],
-          })
+          where: { id: In(schoolIds) },
+          select: ['id', 'name'],
+        })
         : [];
 
     // Create lookup maps
@@ -722,11 +737,11 @@ export class UsersService {
         select: ['userId'],
       });
       const roleFilteredUserIds = new Set(allRoles.map((r) => r.userId));
-      
+
       // Apply search and status filters to get accurate count
       const countQueryBuilder = this.profileRepository.createQueryBuilder('profile')
         .select('profile.id');
-      
+
       if (query?.search) {
         const searchTerm = `%${query.search}%`;
         countQueryBuilder.andWhere(
@@ -734,11 +749,11 @@ export class UsersService {
           { search: searchTerm }
         );
       }
-      
+
       if (query?.status) {
         countQueryBuilder.andWhere('profile.status = :status', { status: query.status });
       }
-      
+
       const allMatchingProfiles = await countQueryBuilder.getMany();
       filteredTotal = allMatchingProfiles.filter((p) => roleFilteredUserIds.has(p.id)).length;
     }
@@ -898,15 +913,67 @@ export class UsersService {
         const appUrl =
           this.configService.get<string>('app.frontendUrl') ||
           this.configService.get<string>('APP_URL', 'http://localhost:5173');
-        const redirectUrl = `${appUrl}/auth?mode=reset`;
 
-        await supabaseAdmin.auth.admin.generateLink({
+        // Check if an invitation was already sent (e.g., via specialized staff invitation)
+        // within the last few minutes to avoid double emailing
+        const activeInvitation = await this.staffInvitationRepository.findOne({
+          where: {
+            invitedEmail: createUserDto.email.toLowerCase(),
+            acceptedAt: IsNull(),
+            expiresAt: MoreThan(new Date())
+          },
+          order: { createdAt: 'DESC' }
+        });
+
+        if (activeInvitation && activeInvitation.createdAt && (Date.now() - activeInvitation.createdAt.getTime() < 5 * 60 * 1000)) {
+          this.logger.log(`Skipping redundant invitation email for ${createUserDto.email} as a recent staff invitation exists.`);
+          return {
+            id: userId,
+            email: createUserDto.email,
+            firstName: createUserDto.firstName,
+            lastName: createUserDto.lastName,
+            role: createUserDto.role,
+            schoolId: requiresSchool && !isSchoolOwner ? createUserDto.schoolId || null : null,
+            schoolIds: isSchoolOwner ? createUserDto.schoolIds || [] : [],
+          };
+        }
+
+        // Use magiclink to allow immediate login and password reset
+        const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
           type: 'magiclink',
           email: createUserDto.email,
           options: {
-            redirectTo: redirectUrl,
+            redirectTo: `${appUrl}/auth?mode=reset`,
           },
         });
+
+        if (linkError) {
+          this.logger.error(`Failed to generate invitation link: ${linkError.message}`);
+        } else if (linkData?.properties?.action_link) {
+          // Determine school name for the invitation
+          let schoolName = 'MyPreschoolPro';
+          if (createUserDto.schoolId) {
+            const school = await this.schoolRepository.findOne({ where: { id: createUserDto.schoolId } });
+            if (school) schoolName = school.name;
+          } else if (createUserDto.schoolIds && createUserDto.schoolIds.length > 0) {
+            const school = await this.schoolRepository.findOne({ where: { id: createUserDto.schoolIds[0] } });
+            if (school) schoolName = school.name;
+          }
+
+          // Send the invitation email using MailerService
+          // We use the staff invitation template which is nice and already defined
+          await this.mailerService.sendStaffInvitation({
+            email: createUserDto.email,
+            role: createUserDto.role,
+            schoolId: createUserDto.schoolId || (createUserDto.schoolIds && createUserDto.schoolIds[0]) || 'system',
+            schoolName: schoolName,
+            invitedBy: 'System Administrator',
+            invitationToken: '', // Not needed for magic link since we have the action_link
+            invitationLink: linkData.properties.action_link,
+          });
+
+          this.logger.log(`Invitation email sent to ${createUserDto.email}`);
+        }
       }
 
       return {
